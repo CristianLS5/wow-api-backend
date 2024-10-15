@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 class BattleNetAPI {
-  private region: string;
+  public region: string;
   private accessToken: string | null = null;
   private tokenExpiration: number = 0;
 
@@ -69,7 +69,7 @@ class BattleNetAPI {
     }
   }
 
-  private async ensureValidToken(): Promise<string> {
+  public async ensureValidToken(): Promise<string> {
     if (!this.accessToken || Date.now() >= this.tokenExpiration) {
       const clientId = process.env.BNET_CLIENT_ID;
       const clientSecret = process.env.BNET_CLIENT_SECRET;
@@ -108,97 +108,7 @@ class BattleNetAPI {
     return this.accessToken;
   }
 
-  async getCharacterEquipment(realmSlug: string, characterName: string) {
-    try {
-      const token = await this.ensureValidToken();
-      const response = await axios.get(
-        `https://${this.region}.api.blizzard.com/profile/wow/character/${realmSlug}/${characterName}/equipment`,
-        {
-          params: {
-            namespace: `profile-${this.region}`,
-            locale: "en_US",
-          },
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      const equipmentWithIcons = await Promise.all(
-        response.data.equipped_items.map(async (item: any) => {
-          const iconUrl = await this.getItemIcon(item.item.id);
-          return { ...item, iconUrl };
-        })
-      );
-
-      return { ...response.data, equipped_items: equipmentWithIcons };
-    } catch (error) {
-      console.error("Error fetching character equipment:", error);
-      throw error;
-    }
-  }
-
-  async getItemIcon(itemId: number): Promise<string | null> {
-    try {
-      const mediaData = await this.getItemMedia(itemId);
-      if (mediaData && mediaData.assets) {
-        const iconAsset = mediaData.assets.find(
-          (asset: any) => asset.key === "icon"
-        );
-        if (iconAsset) {
-          return iconAsset.value;
-        }
-      }
-      return null;
-    } catch (error) {
-      console.error(`Error fetching icon for item ${itemId}:`, error);
-      return null;
-    }
-  }
-
-  async getItemMedia(itemId: number): Promise<any> {
-    try {
-      const token = await this.ensureValidToken();
-      const response = await axios.get(
-        `https://${this.region}.api.blizzard.com/data/wow/media/item/${itemId}`,
-        {
-          params: {
-            namespace: `static-${this.region}`,
-            locale: "en_US",
-          },
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-      return response.data;
-    } catch (error) {
-      console.error(`Error fetching media for item ${itemId}:`, error);
-      return null;
-    }
-  }
-
-  async getCharacterMedia(realmSlug: string, characterName: string) {
-    try {
-      const token = await this.ensureValidToken();
-      const response = await axios.get(
-        `https://${this.region}.api.blizzard.com/profile/wow/character/${realmSlug}/${characterName}/character-media`,
-        {
-          params: {
-            namespace: `profile-${this.region}`,
-            locale: "en_US",
-          },
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-      return response.data;
-    } catch (error) {
-      console.error("Error fetching character media:", error);
-      throw error;
-    }
-  }
+  
 }
 
 export default new BattleNetAPI();
