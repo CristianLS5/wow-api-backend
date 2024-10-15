@@ -5,7 +5,7 @@ import mongoose from "mongoose";
 import cors from "cors";
 import BattleNetAPI from "./battlenet-api";
 import CharacterEquipment from "./models/CharacterEquipment";
-
+import CharacterMedia from "./models/CharacterMedia";
 dotenv.config();
 
 const app = express();
@@ -138,6 +138,61 @@ app.get(
       } else {
         res.status(500).json({
           error: "Failed to fetch character equipment data",
+          details: "An unknown error occurred",
+        });
+      }
+    }
+  }
+);
+
+app.get(
+  "/api/character/:realmSlug/:characterName/media",
+  async (req: Request, res: Response) => {
+    const { realmSlug, characterName } = req.params;
+
+    try {
+      let cachedData = await CharacterMedia.findOne({
+        realmSlug: realmSlug.toLowerCase(),
+        characterName: characterName.toLowerCase(),
+      });
+
+      if (cachedData && cachedData.media) {
+        console.log("Found cached character media data");
+        res.json(cachedData.media);
+        return;
+      }
+
+      console.log("Fetching new character media data");
+      const mediaData = await BattleNetAPI.getCharacterMedia(
+        realmSlug,
+        characterName
+      );
+
+      const newCachedData = await CharacterMedia.findOneAndUpdate(
+        {
+          realmSlug: realmSlug.toLowerCase(),
+          characterName: characterName.toLowerCase(),
+        },
+        {
+          media: mediaData,
+          lastUpdated: new Date(),
+        },
+        { upsert: true, new: true }
+      );
+
+      console.log("Character media data saved to database");
+      res.json(newCachedData.media);
+    } catch (error: unknown) {
+      console.error("Error fetching character media data:", error);
+      if (error instanceof Error) {
+        res.status(500).json({
+          error: "Failed to fetch character media data",
+          details: error.message,
+          stack: error.stack,
+        });
+      } else {
+        res.status(500).json({
+          error: "Failed to fetch character media data",
           details: "An unknown error occurred",
         });
       }

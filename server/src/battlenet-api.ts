@@ -177,6 +177,28 @@ class BattleNetAPI {
       return null;
     }
   }
+
+  async getCharacterMedia(realmSlug: string, characterName: string) {
+    try {
+      const token = await this.ensureValidToken();
+      const response = await axios.get(
+        `https://${this.region}.api.blizzard.com/profile/wow/character/${realmSlug}/${characterName}/character-media`,
+        {
+          params: {
+            namespace: `profile-${this.region}`,
+            locale: "en_US",
+          },
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching character media:", error);
+      throw error;
+    }
+  }
 }
 
 export default new BattleNetAPI();
