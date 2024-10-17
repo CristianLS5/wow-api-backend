@@ -31,6 +31,13 @@ const EquippedItemSchema = new mongoose.Schema(
       value: Number,
       display_string: String,
     },
+    transmog: {
+      item: {
+        id: Number,
+        name: String,
+      },
+      iconUrl: String,
+    },
   },
   { strict: false }
 );

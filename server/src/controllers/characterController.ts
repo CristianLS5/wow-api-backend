@@ -20,12 +20,27 @@ export const getCharacterEquipment = async (req: Request, res: Response) => {
       }
     );
 
-    const equipmentWithIcons = await Promise.all(
-      response.data.equipped_items.map(async (item: any) => {
-        const iconUrl = await getItemIcon(item.item.id);
-        return { ...item, iconUrl };
-      })
-    );
+  const equipmentWithIcons = await Promise.all(
+    response.data.equipped_items.map(async (item: any) => {
+      const iconUrl = await getItemIcon(item.item.id);
+      if (item.transmog) {
+        console.log("Transmog found:", item.transmog);
+        const transmogIconUrl = await getItemIcon(item.transmog.item.id);
+        console.log("Transmog icon URL:", transmogIconUrl);
+        return {
+          ...item,
+          iconUrl,
+          transmog: {
+            ...item.transmog,
+            iconUrl: transmogIconUrl,
+          },
+        };
+      }
+      return { ...item, iconUrl };
+    })
+  );
+
+    
 
     res.json({ ...response.data, equipped_items: equipmentWithIcons });
   } catch (error) {
