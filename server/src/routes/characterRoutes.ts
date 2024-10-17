@@ -5,15 +5,15 @@ const router = express.Router();
 
 router.get(
   "/:realmSlug/:characterName/equipment",
-  characterController.getCharacterEquipment
+  characterController.getCharacterEquipment as express.RequestHandler
 );
 router.get(
   "/:realmSlug/:characterName/media",
-  characterController.getCharacterMedia
+  characterController.getCharacterMedia as express.RequestHandler
 );
 router.get(
   "/:realmSlug/:characterName/profile",
-  characterController.getCharacterProfile
+  characterController.getCharacterProfile as express.RequestHandler
 );
 
 export default router;
