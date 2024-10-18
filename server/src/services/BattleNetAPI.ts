@@ -36,35 +36,37 @@ class BattleNetAPI {
     );
   }
 
-  async getAccessToken(code: string): Promise<string> {
-    const clientId = process.env.BNET_CLIENT_ID;
-    const clientSecret = process.env.BNET_CLIENT_SECRET;
-    const redirectUri = process.env.BNET_CALLBACK_URL;
-
-    if (!clientId || !clientSecret || !redirectUri) {
-      throw new Error("Missing required environment variables");
-    }
+  async getAccessToken(
+    code: string
+  ): Promise<{ token: string; expiresIn: number }> {
+    const tokenUrl = `https://${this.region}.battle.net/oauth/token`;
+    const params = new URLSearchParams({
+      grant_type: "authorization_code",
+      code: code,
+      redirect_uri: process.env.BNET_CALLBACK_URL || "",
+    });
 
     try {
-      const response = await axios.post(
-        `https://${this.region}.battle.net/oauth/token`,
-        null,
-        {
-          params: {
-            grant_type: "authorization_code",
-            code,
-            redirect_uri: redirectUri,
-          },
-          auth: {
-            username: clientId,
-            password: clientSecret,
-          },
-        }
-      );
+      const response = await axios.post(tokenUrl, params, {
+        auth: {
+          username: process.env.BNET_CLIENT_ID || "",
+          password: process.env.BNET_CLIENT_SECRET || "",
+        },
+      });
 
-      return response.data.access_token;
+      return {
+        token: response.data.access_token,
+        expiresIn: response.data.expires_in,
+      };
     } catch (error) {
       console.error("Error getting access token:", error);
+      if (axios.isAxiosError(error) && error.response) {
+        console.error("Battle.net API error response:", {
+          status: error.response.status,
+          data: error.response.data,
+          headers: error.response.headers,
+        });
+      }
       throw error;
     }
   }
@@ -108,7 +110,33 @@ class BattleNetAPI {
     return this.accessToken;
   }
 
-  
+  async validateToken(token: string): Promise<boolean> {
+    const tokenUrl = `https://${this.region}.battle.net/oauth/check_token`;
+
+    try {
+      const response = await axios.post(
+        tokenUrl,
+        { token },
+        {
+          auth: {
+            username: process.env.BNET_CLIENT_ID || "",
+            password: process.env.BNET_CLIENT_SECRET || "",
+          },
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+        }
+      );
+
+      console.log("Token validation response:", response.data);
+      // The token is valid if we get a successful response
+      return true;
+    } catch (error) {
+      console.error("Error validating token:", error);
+      // If there's an error, the token is likely invalid
+      return false;
+    }
+  }
 }
 
 export default new BattleNetAPI();
