@@ -6,9 +6,19 @@ const CharacterProfileSchema = new mongoose.Schema(
     characterName: { type: String, required: true },
     profile: {
       name: { type: String, required: true },
-      gender: { type: String },
-      faction: { type: String },
-      race: { type: String },
+      gender: {
+        type: { type: String },
+        name: { type: String }
+      },
+      faction: {
+        type: { type: String },
+        name: { type: String }
+      },
+      race: {
+        key: { href: String },
+        name: String,
+        id: Number,
+      },
       character_class: {
         key: { href: String },
         name: String,

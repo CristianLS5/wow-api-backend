@@ -72,21 +72,19 @@ export const getCharacterEquipment = async (req: Request, res: Response): Promis
   }
 };
 
-const getItemIcon = async (itemId: number): Promise<string | null> => {
+const getItemIcon = async (itemId: number): Promise<string> => {
   try {
     const mediaData = await getItemMedia(itemId);
     if (mediaData && mediaData.assets) {
-      const iconAsset = mediaData.assets.find(
-        (asset: any) => asset.key === "icon"
-      );
+      const iconAsset = mediaData.assets.find((asset: any) => asset.key === "icon");
       if (iconAsset) {
         return iconAsset.value;
       }
     }
-    return null;
+    return ""; // Return an empty string if no icon found
   } catch (error) {
     console.error(`Error fetching icon for item ${itemId}:`, error);
-    return null;
+    return ""; // Return an empty string in case of error
   }
 };
 

@@ -133,6 +133,13 @@ class BattleNetAPI {
       return true;
     } catch (error) {
       console.error("Error validating token:", error);
+      if (axios.isAxiosError(error) && error.response) {
+        console.error("Battle.net API error response:", {
+          status: error.response.status,
+          data: error.response.data,
+          headers: error.response.headers,
+        });
+      }
       // If there's an error, the token is likely invalid
       return false;
     }

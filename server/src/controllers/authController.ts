@@ -32,11 +32,11 @@ export const handleCallback = async (req: Request, res: Response) => {
   delete (req.session as any).oauthState;
 
   try {
-    const accessToken = await BattleNetAPI.getAccessToken(code as string);
-    (req.session as any).accessToken = accessToken;
+    const { token, expiresIn } = await BattleNetAPI.getAccessToken(code as string);
+    (req.session as any).accessToken = token;
 
-    // Redirect to frontend with code and state
-    res.redirect(`${frontendCallback}?code=${code}&state=${state}`);
+    // Redirect to frontend with success status
+    res.redirect(`${frontendCallback}?success=true&expiresIn=${expiresIn}`);
   } catch (error: unknown) {
     console.error("Error exchanging code for token:", error);
     const errorMessage =
@@ -51,7 +51,7 @@ export const validateToken = async (req: Request, res: Response) => {
   const accessToken = (req.session as any).accessToken;
 
   if (!accessToken) {
-    res.json({ isAuthenticated: false });
+    res.json({ isAuthenticated: false, error: "No access token found" });
     return;
   }
 
@@ -62,13 +62,16 @@ export const validateToken = async (req: Request, res: Response) => {
     } else {
       // Token is not valid, clear the session
       delete (req.session as any).accessToken;
-      res.json({ isAuthenticated: false });
+      res.json({ isAuthenticated: false, error: "Invalid token" });
     }
   } catch (error) {
     console.error("Error validating token:", error);
     // In case of an error, assume the token is invalid
     delete (req.session as any).accessToken;
-    res.json({ isAuthenticated: false });
+    res.json({ 
+      isAuthenticated: false, 
+      error: error instanceof Error ? error.message : "Unknown error validating token" 
+    });
   }
 };
 
