@@ -5,6 +5,10 @@ import mongoose from "mongoose";
 import cors from "cors";
 import authRoutes from "./routes/authRoutes";
 import characterRoutes from "./routes/characterRoutes";
+import collectionsRoutes from "./routes/collectionsRoutes";
+import mountRoutes from "./routes/mountRoutes";
+import itemRoutes from "./routes/itemRoutes";
+import creatureRoutes from "./routes/creatureRoutes";
 
 dotenv.config();
 
@@ -31,6 +35,10 @@ app.use(
 
 app.use("/auth", authRoutes);
 app.use("/api/character", characterRoutes);
+app.use("/api/collections", collectionsRoutes);
+app.use("/api/mounts", mountRoutes);
+app.use("/api/items", itemRoutes);
+app.use("/api/creatures", creatureRoutes);
 
 const mongoUri =
   process.env.MONGODB_URI || "mongodb://mongodb:27017/wow_character_viewer";
