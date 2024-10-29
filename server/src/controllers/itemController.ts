@@ -1,41 +1,76 @@
 import { Request, Response } from "express";
-import axios from "axios";
 import BattleNetAPI from "../services/BattleNetAPI";
-import Bottleneck from "bottleneck";
+import { handleApiError } from "../utils/errorHandler";
 
-const limiter = new Bottleneck({
-  minTime: 100, // Minimum time between requests (in ms)
-});
+interface ItemSearchResult {
+  data: {
+    id: number;
+    name: {
+      en_US: string;
+    };
+    quality: {
+      type: string;
+    };
+    level: number;
+    required_level: number;
+    item_class: {
+      name: {
+        en_US: string;
+      };
+    };
+    item_subclass: {
+      name: {
+        en_US: string;
+      };
+    };
+  };
+}
 
-export const getItemsIndex = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
+interface ItemSearchResponse {
+  results: ItemSearchResult[];
+  pageSize: number;
+}
+
+interface ItemDetails {
+  id: number;
+  name: string;
+  quality?: {
+    type: string;
+  };
+  level: number;
+  required_level: number;
+  item_class?: {
+    name: string;
+  };
+  item_subclass?: {
+    name: string;
+  };
+  media?: ItemMediaResponse | null;
+}
+
+interface ItemMediaResponse {
+  assets: Array<{
+    key: string;
+    value: string;
+  }>;
+}
+
+export const getItemsIndex = async (req: Request, res: Response): Promise<void> => {
   try {
-    const token = await BattleNetAPI.ensureValidToken();
     const page = parseInt(req.query.page as string) || 1;
     const pageSize = parseInt(req.query.pageSize as string) || 100;
 
-    const response = await limiter.schedule(() =>
-      axios.get(
-        `https://${BattleNetAPI.region}.api.blizzard.com/data/wow/search/item`,
-        {
-          params: {
-            namespace: `static-${BattleNetAPI.region}`,
-            locale: "en_US",
-            _page: page,
-            _pageSize: pageSize,
-            orderby: "id",
-          },
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      )
+    const response = await BattleNetAPI.makeRequest<ItemSearchResponse>(
+      '/data/wow/search/item',
+      {
+        _page: page,
+        _pageSize: pageSize,
+        orderby: "id"
+      },
+      'static'
     );
 
-    const items = response.data.results;
-    const itemsWithDetails = items.map((item: any) => ({
+    const itemsWithDetails = response.results.map((item: ItemSearchResult) => ({
       id: item.data.id,
       name: item.data.name.en_US,
       quality: item.data.quality.type,
@@ -48,66 +83,52 @@ export const getItemsIndex = async (
     res.json({
       items: itemsWithDetails,
       pageInfo: {
-        page: page,
-        pageSize: pageSize,
-        totalPages: Math.ceil(response.data.pageSize / pageSize),
-        totalItems: response.data.pageSize,
+        page,
+        pageSize,
+        totalPages: Math.ceil(response.pageSize / pageSize),
+        totalItems: response.pageSize,
       },
     });
   } catch (error) {
-    console.error("Error fetching items index:", error);
-    if (axios.isAxiosError(error)) {
-      console.error("Axios error details:", {
-        response: error.response?.data,
-        status: error.response?.status,
-        headers: error.response?.headers,
-      });
-    }
-    res.status(500).json({ error: "An error occurred while fetching items" });
+    handleApiError(error, res, 'fetch items index');
   }
 };
 
-export const getItemById = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
+export const getItemById = async (req: Request, res: Response): Promise<void> => {
   try {
     const itemId = parseInt(req.params.itemId);
     const itemDetails = await fetchItemDetails(itemId);
+    
+    if (!itemDetails) {
+      res.status(404).json({ error: "Item not found" });
+      return;
+    }
+    
     res.json(itemDetails);
   } catch (error) {
-    console.error(`Error fetching item ${req.params.itemId}:`, error);
-    res
-      .status(500)
-      .json({ error: "An error occurred while fetching the item" });
+    handleApiError(error, res, `fetch item ${req.params.itemId}`);
   }
 };
 
-async function fetchItemDetails(itemId: number): Promise<any> {
+async function fetchItemDetails(itemId: number): Promise<ItemDetails | null> {
   try {
-    const token = await BattleNetAPI.ensureValidToken();
-    const response = await limiter.schedule(() =>
-      axios.get(`https://${BattleNetAPI.region}.api.blizzard.com/data/wow/item/${itemId}`, {
-        params: {
-          namespace: `static-${BattleNetAPI.region}`,
-          locale: "en_US",
-        },
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      })
-    );
-
-    const mediaData = await fetchItemMedia(itemId);
+    const [itemData, mediaData] = await Promise.all([
+      BattleNetAPI.makeRequest<ItemDetails>(
+        `/data/wow/item/${itemId}`,
+        {},
+        'static'
+      ),
+      fetchItemMedia(itemId)
+    ]);
 
     return {
-      id: response.data.id,
-      name: response.data.name,
-      quality: response.data.quality?.type,
-      level: response.data.level,
-      required_level: response.data.required_level,
-      item_class: response.data.item_class?.name,
-      item_subclass: response.data.item_subclass?.name,
+      id: itemData.id,
+      name: itemData.name,
+      quality: itemData.quality,
+      level: itemData.level,
+      required_level: itemData.required_level,
+      item_class: itemData.item_class,
+      item_subclass: itemData.item_subclass,
       media: mediaData,
     };
   } catch (error) {
@@ -116,26 +137,15 @@ async function fetchItemDetails(itemId: number): Promise<any> {
   }
 }
 
-async function fetchItemMedia(itemId: number): Promise<any> {
+async function fetchItemMedia(itemId: number): Promise<ItemMediaResponse | null> {
   try {
-    const token = await BattleNetAPI.ensureValidToken();
-    const response = await limiter.schedule(() =>
-      axios.get(
-        `https://${BattleNetAPI.region}.api.blizzard.com/data/wow/media/item/${itemId}`,
-        {
-          params: {
-            namespace: `static-${BattleNetAPI.region}`,
-            locale: "en_US",
-          },
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      )
+    return await BattleNetAPI.makeRequest<ItemMediaResponse>(
+      `/data/wow/media/item/${itemId}`,
+      {},
+      'static'
     );
-    return response.data;
   } catch (error) {
-    console.error(`Error fetching item media for item ID ${itemId}:`, error);
+    console.error(`Error fetching item media for ID ${itemId}:`, error);
     return null;
   }
 }

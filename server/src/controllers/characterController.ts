@@ -1,18 +1,43 @@
 import { Request, Response } from "express";
-import axios from "axios";
 import BattleNetAPI from "../services/BattleNetAPI";
 import CharacterEquipment from "../models/CharacterEquipment";
 import CharacterMedia from "../models/CharacterMedia";
 import CharacterProfile from "../models/CharacterProfile";
+import { handleApiError } from "../utils/errorHandler";
 
-export const getCharacterEquipment = async (req: Request, res: Response): Promise<void> => {
+interface ItemMedia {
+  assets: Array<{
+    key: string;
+    value: string;
+  }>;
+}
+
+interface EquipmentItem {
+  item: {
+    id: number;
+  };
+  transmog?: {
+    item: {
+      id: number;
+    };
+  };
+}
+
+interface EquipmentData {
+  equipped_items: EquipmentItem[];
+  // Add other equipment properties as needed
+}
+
+export const getCharacterEquipment = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
   const { realmSlug, characterName } = req.params;
   try {
-    // Check if we have recent data in the database
     const cachedEquipment = await CharacterEquipment.findOne({
       realmSlug,
       characterName,
-      lastUpdated: { $gt: new Date(Date.now() - 24 * 60 * 60 * 1000) }, // Data less than 24 hours old
+      lastUpdated: { $gt: new Date(Date.now() - 24 * 60 * 60 * 1000) },
     });
 
     if (cachedEquipment) {
@@ -20,23 +45,14 @@ export const getCharacterEquipment = async (req: Request, res: Response): Promis
       return;
     }
 
-    // If no recent data, fetch from API
-    const token = await BattleNetAPI.ensureValidToken();
-    const response = await axios.get(
-      `https://${BattleNetAPI.region}.api.blizzard.com/profile/wow/character/${realmSlug}/${characterName}/equipment`,
-      {
-        params: {
-          namespace: `profile-${BattleNetAPI.region}`,
-          locale: "en_US",
-        },
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
+    const equipmentData = await BattleNetAPI.makeRequest<EquipmentData>(
+      `/profile/wow/character/${realmSlug}/${characterName}/equipment`,
+      {},
+      "profile"
     );
 
     const equipmentWithIcons = await Promise.all(
-      response.data.equipped_items.map(async (item: any) => {
+      equipmentData.equipped_items.map(async (item: EquipmentItem) => {
         const iconUrl = await getItemIcon(item.item.id);
         if (item.transmog) {
           const transmogIconUrl = await getItemIcon(item.transmog.item.id);
@@ -53,71 +69,59 @@ export const getCharacterEquipment = async (req: Request, res: Response): Promis
       })
     );
 
-    const equipmentData = {
-      ...response.data,
+    const finalEquipmentData = {
+      ...equipmentData,
       equipped_items: equipmentWithIcons,
     };
 
-    // Update or create the database entry
     await CharacterEquipment.findOneAndUpdate(
       { realmSlug, characterName },
-      { equipment: equipmentData, lastUpdated: new Date() },
-      { upsert: true, new: true }
+      { equipment: finalEquipmentData, lastUpdated: new Date() },
+      { upsert: true }
     );
 
-    res.json(equipmentData);
+    res.json(finalEquipmentData);
   } catch (error) {
-    console.error("Error fetching character equipment:", error);
-    res.status(500).json({ error: "Failed to fetch character equipment" });
+    handleApiError(error, res, "fetch character equipment");
   }
 };
 
 const getItemIcon = async (itemId: number): Promise<string> => {
   try {
     const mediaData = await getItemMedia(itemId);
-    if (mediaData && mediaData.assets) {
-      const iconAsset = mediaData.assets.find((asset: any) => asset.key === "icon");
-      if (iconAsset) {
-        return iconAsset.value;
-      }
-    }
-    return ""; // Return an empty string if no icon found
+    const iconAsset = mediaData?.assets?.find(
+      (asset: any) => asset.key === "icon"
+    );
+    return iconAsset?.value || "";
   } catch (error) {
     console.error(`Error fetching icon for item ${itemId}:`, error);
-    return ""; // Return an empty string in case of error
+    return "";
   }
 };
 
-const getItemMedia = async (itemId: number): Promise<any> => {
+const getItemMedia = async (itemId: number): Promise<ItemMedia | null> => {
   try {
-    const token = await BattleNetAPI.ensureValidToken();
-    const response = await axios.get(
-      `https://${BattleNetAPI.region}.api.blizzard.com/data/wow/media/item/${itemId}`,
-      {
-        params: {
-          namespace: `static-${BattleNetAPI.region}`,
-          locale: "en_US",
-        },
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
+    return await BattleNetAPI.makeRequest<ItemMedia>(
+      `/data/wow/media/item/${itemId}`,
+      {},
+      "static"
     );
-    return response.data;
   } catch (error) {
     console.error(`Error fetching media for item ${itemId}:`, error);
     return null;
   }
 };
 
-export const getCharacterMedia = async (req: Request, res: Response): Promise<void> => {
+export const getCharacterMedia = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
   const { realmSlug, characterName } = req.params;
   try {
-    // Check if we have recent data in the database
     const cachedMedia = await CharacterMedia.findOne({
       realmSlug,
       characterName,
-      lastUpdated: { $gt: new Date(Date.now() - 24 * 60 * 60 * 1000) }, // Data less than 24 hours old
+      lastUpdated: { $gt: new Date(Date.now() - 24 * 60 * 60 * 1000) },
     });
 
     if (cachedMedia) {
@@ -125,43 +129,34 @@ export const getCharacterMedia = async (req: Request, res: Response): Promise<vo
       return;
     }
 
-    // If no recent data, fetch from API
-    const token = await BattleNetAPI.ensureValidToken();
-    const response = await axios.get(
-      `https://${BattleNetAPI.region}.api.blizzard.com/profile/wow/character/${realmSlug}/${characterName}/character-media`,
-      {
-        params: {
-          namespace: `profile-${BattleNetAPI.region}`,
-          locale: "en_US",
-        },
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
+    const mediaData = await BattleNetAPI.makeRequest(
+      `/profile/wow/character/${realmSlug}/${characterName}/character-media`,
+      {},
+      "profile"
     );
 
-    // Update or create the database entry
     await CharacterMedia.findOneAndUpdate(
       { realmSlug, characterName },
-      { media: response.data, lastUpdated: new Date() },
-      { upsert: true, new: true }
+      { media: mediaData, lastUpdated: new Date() },
+      { upsert: true }
     );
 
-    res.json(response.data);
+    res.json(mediaData);
   } catch (error) {
-    console.error("Error fetching character media:", error);
-    res.status(500).json({ error: "Failed to fetch character media" });
+    handleApiError(error, res, "fetch character media");
   }
 };
 
-export const getCharacterProfile = async (req: Request, res: Response): Promise<void> => {
+export const getCharacterProfile = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
   const { realmSlug, characterName } = req.params;
   try {
-    // Check if we have recent data in the database
     const cachedProfile = await CharacterProfile.findOne({
       realmSlug,
       characterName,
-      lastUpdated: { $gt: new Date(Date.now() - 24 * 60 * 60 * 1000) }, // Data less than 24 hours old
+      lastUpdated: { $gt: new Date(Date.now() - 24 * 60 * 60 * 1000) },
     });
 
     if (cachedProfile) {
@@ -169,31 +164,20 @@ export const getCharacterProfile = async (req: Request, res: Response): Promise<
       return;
     }
 
-    // If no recent data, fetch from API
-    const token = await BattleNetAPI.ensureValidToken();
-    const response = await axios.get(
-      `https://${BattleNetAPI.region}.api.blizzard.com/profile/wow/character/${realmSlug}/${characterName}`,
-      {
-        params: {
-          namespace: `profile-${BattleNetAPI.region}`,
-          locale: "en_US",
-        },
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
+    const profileData = await BattleNetAPI.makeRequest(
+      `/profile/wow/character/${realmSlug}/${characterName}`,
+      {},
+      "profile"
     );
 
-    // Update or create the database entry
     await CharacterProfile.findOneAndUpdate(
       { realmSlug, characterName },
-      { profile: response.data, lastUpdated: new Date() },
-      { upsert: true, new: true }
+      { profile: profileData, lastUpdated: new Date() },
+      { upsert: true }
     );
 
-    res.json(response.data);
+    res.json(profileData);
   } catch (error) {
-    console.error("Error fetching character profile:", error);
-    res.status(500).json({ error: "Failed to fetch character profile" });
+    handleApiError(error, res, "fetch character profile");
   }
 };

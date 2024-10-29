@@ -1,32 +1,41 @@
 import { Request, Response } from "express";
-import axios from "axios";
 import BattleNetAPI from "../services/BattleNetAPI";
 import Mount from "../models/Mounts";
+import { handleApiError } from "../utils/errorHandler";
+
+interface MountIndex {
+  mounts: Array<{
+    id: number;
+    name: string;
+  }>;
+}
+
+interface MountData {
+  id: number;
+  name: { en_US: string };
+  // Add other mount properties as needed
+}
 
 export const getMountsIndex = async (
   _req: Request,
   res: Response
 ): Promise<void> => {
   try {
-    const token = await BattleNetAPI.ensureValidToken();
+    console.log("Starting getMountsIndex request...");
 
-    const mountIndexResponse = await axios.get(
-      `https://${BattleNetAPI.region}.api.blizzard.com/data/wow/mount/index`,
+    const data = await BattleNetAPI.makeRequest<MountIndex>(
+      "/data/wow/mount/index",
       {
-        params: {
-          namespace: `static-${BattleNetAPI.region}`,
-          locale: "en_US",
-        },
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
+        namespace: "static-eu",
+        locale: "en_US",
+      },
+      "static"
     );
 
-    res.json(mountIndexResponse.data);
+    console.log(`Total number of mounts in index: ${data.mounts.length}`);
+    res.json(data);
   } catch (error) {
-    console.error("Error fetching mounts index:", error);
-    res.status(500).json({ error: "Error fetching mounts index" });
+    handleApiError(error, res, "fetch mounts index");
   }
 };
 
@@ -35,29 +44,15 @@ export const searchMounts = async (
   res: Response
 ): Promise<void> => {
   try {
-    const token = await BattleNetAPI.ensureValidToken();
     const { name } = req.query;
-
-    const searchResponse = await axios.get(
-      `https://${BattleNetAPI.region}.api.blizzard.com/data/wow/search/mount`,
-      {
-        params: {
-          namespace: `static-${BattleNetAPI.region}`,
-          name: name,
-          orderby: "id",
-          _page: 1,
-          locale: "en_US",
-        },
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
-    );
-
-    res.json(searchResponse.data);
+    const data = await BattleNetAPI.makeRequest("/data/wow/search/mount", {
+      name,
+      orderby: "id",
+      _page: 1,
+    });
+    res.json(data);
   } catch (error) {
-    console.error("Error searching mounts:", error);
-    res.status(500).json({ error: "Error searching mounts" });
+    handleApiError(error, res, "search mounts");
   }
 };
 
@@ -66,28 +61,11 @@ export const getMountById = async (
   res: Response
 ): Promise<void> => {
   try {
-    const token = await BattleNetAPI.ensureValidToken();
     const { mountId } = req.params;
-
-    const mountResponse = await axios.get(
-      `https://${BattleNetAPI.region}.api.blizzard.com/data/wow/mount/${mountId}`,
-      {
-        params: {
-          namespace: `static-${BattleNetAPI.region}`,
-          locale: "en_US",
-        },
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
-    );
-
-    res.json(mountResponse.data);
+    const data = await BattleNetAPI.makeRequest(`/data/wow/mount/${mountId}`);
+    res.json(data);
   } catch (error) {
-    console.error(`Error fetching mount with ID ${req.params.mountId}:`, error);
-    res
-      .status(500)
-      .json({ error: `Error fetching mount with ID ${req.params.mountId}` });
+    handleApiError(error, res, `fetch mount ${req.params.mountId}`);
   }
 };
 
@@ -96,67 +74,64 @@ export const getAllMounts = async (
   res: Response
 ): Promise<void> => {
   try {
-    // Check if we have recent data in the database
+    console.log("Starting getAllMounts request...");
+
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const storedMounts = await Mount.find(
       { lastUpdated: { $gt: oneDayAgo } },
       { _id: 0, __v: 0 }
     ).sort({ mountId: 1 });
 
+    console.log(`Found ${storedMounts.length} mounts in cache`);
+
     if (storedMounts.length > 0) {
-      // If we have recent data, return it
+      console.log("Returning cached mounts data");
       res.json(storedMounts);
       return;
     }
 
-    // If no recent data, fetch from Blizzard API
-    const token = await BattleNetAPI.ensureValidToken();
-    const mountIndexResponse = await axios.get(
-      `https://${BattleNetAPI.region}.api.blizzard.com/data/wow/mount/index`,
+    console.log("Cache empty or expired, fetching from Blizzard API...");
+    const mountIndex = await BattleNetAPI.makeRequest<MountIndex>(
+      "/data/wow/mount/index",
       {
-        params: {
-          namespace: `static-${BattleNetAPI.region}`,
+        namespace: "static-eu",
+        locale: "en_US",
+      },
+      "static"
+    );
+    console.log(`Found ${mountIndex.mounts.length} mounts in index`);
+
+    const updatedMounts = [];
+    console.log("Starting to fetch individual mount details...");
+
+    for (const mount of mountIndex.mounts) {
+      console.log(`Fetching details for mount ID: ${mount.id}`);
+      const mountData = await BattleNetAPI.makeRequest<MountData>(
+        `/data/wow/mount/${mount.id}`,
+        {
+          namespace: "static-eu",
           locale: "en_US",
         },
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
-    );
-
-    const mounts = mountIndexResponse.data.mounts;
-    const updatedMounts = [];
-
-    for (const mount of mounts) {
-      const mountResponse = await axios.get(
-        `https://${BattleNetAPI.region}.api.blizzard.com/data/wow/mount/${mount.id}`,
-        {
-          params: {
-            namespace: `static-${BattleNetAPI.region}`,
-            locale: "en_US",
-          },
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
+        "static"
       );
 
+      console.log(`Updating mount in database: ${mountData.name.en_US}`);
       const updatedMount = await Mount.findOneAndUpdate(
         { mountId: mount.id },
         {
           mountId: mount.id,
-          data: mountResponse.data,
+          data: mountData,
           lastUpdated: new Date(),
         },
         { upsert: true, new: true }
       );
-
       updatedMounts.push(updatedMount);
     }
 
+    console.log(`Successfully updated ${updatedMounts.length} mounts`);
     res.json(updatedMounts);
   } catch (error) {
-    console.error("Error fetching and storing all mounts:", error);
-    res.status(500).json({ error: "Error fetching and storing all mounts" });
+    console.error("Error in getAllMounts:", error);
+    handleApiError(error, res, "fetch and store all mounts");
   }
 };
