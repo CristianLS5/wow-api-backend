@@ -80,18 +80,17 @@ export const getAllToys = async (
     const updatedToys = [];
 
     for (const toy of toyIndex.toys) {
-      const [toyData, mediaData] = await Promise.all([
-        BattleNetAPI.makeRequest<ToyData>(
-          `/data/wow/toy/${toy.id}`,
-          {},
-          "static"
-        ),
-        BattleNetAPI.makeRequest<ItemMediaResponse>(
-          `/data/wow/media/item/${toy.id}`,
-          {},
-          "static"
-        ),
-      ]);
+      const toyData = await BattleNetAPI.makeRequest<ToyData>(
+        `/data/wow/toy/${toy.id}`,
+        {},
+        "static"
+      );
+
+      const mediaData = await BattleNetAPI.makeRequest<ItemMediaResponse>(
+        `/data/wow/media/item/${toyData.item.id}`,
+        {},
+        "static"
+      );
 
       const toyWithMedia = {
         ...toyData,
@@ -138,15 +137,17 @@ export const getToyById = async (
       return;
     }
 
-    // Fetch new data
-    const [toyData, mediaData] = await Promise.all([
-      BattleNetAPI.makeRequest<ToyData>(`/data/wow/toy/${toyId}`, {}, "static"),
-      BattleNetAPI.makeRequest<ItemMediaResponse>(
-        `/data/wow/media/item/${toyId}`,
-        {},
-        "static"
-      ),
-    ]);
+    const toyData = await BattleNetAPI.makeRequest<ToyData>(
+      `/data/wow/toy/${toyId}`,
+      {},
+      "static"
+    );
+
+    const mediaData = await BattleNetAPI.makeRequest<ItemMediaResponse>(
+      `/data/wow/media/item/${toyData.item.id}`,
+      {},
+      "static"
+    );
 
     const toyWithMedia = {
       ...toyData,
