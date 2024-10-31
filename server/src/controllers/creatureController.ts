@@ -30,29 +30,55 @@ export const getCreatureMedia = async (
     });
 
     if (creatureMedia) {
+      // If we have a cached "not found" entry, return null assets
+      if (creatureMedia.notFound) {
+        res.json({ assets: [] });
+        return;
+      }
       res.json(creatureMedia);
       return;
     }
 
-    // Fetch new data
-    const mediaData = await BattleNetAPI.makeRequest<CreatureMediaResponse>(
-      `/data/wow/media/creature-display/${creatureDisplayId}`,
-      {},
-      'static'
-    );
+    try {
+      // Fetch new data
+      const mediaData = await BattleNetAPI.makeRequest<CreatureMediaResponse>(
+        `/data/wow/media/creature-display/${creatureDisplayId}`,
+        {},
+        'static'
+      );
 
-    // Update cache
-    creatureMedia = await CreatureMedia.findOneAndUpdate(
-      { creatureDisplayId },
-      { 
-        creatureDisplayId,
-        assets: mediaData.assets,
-        lastUpdated: new Date()
-      },
-      { upsert: true, new: true }
-    );
+      // Update cache with successful response
+      creatureMedia = await CreatureMedia.findOneAndUpdate(
+        { creatureDisplayId },
+        { 
+          creatureDisplayId,
+          assets: mediaData.assets,
+          notFound: false,
+          lastUpdated: new Date()
+        },
+        { upsert: true, new: true }
+      );
 
-    res.json(creatureMedia);
+      res.json(creatureMedia);
+    } catch (error: any) {
+      // If it's a 404, cache this information and return empty assets
+      if (error?.status === 404) {
+        await CreatureMedia.findOneAndUpdate(
+          { creatureDisplayId },
+          { 
+            creatureDisplayId,
+            assets: [],
+            notFound: true,
+            lastUpdated: new Date()
+          },
+          { upsert: true }
+        );
+        res.json({ assets: [] });
+        return;
+      }
+      // Re-throw other errors
+      throw error;
+    }
   } catch (error) {
     handleApiError(error, res, `fetch creature media ${req.params.creatureId}`);
   }

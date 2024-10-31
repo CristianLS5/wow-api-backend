@@ -9,6 +9,7 @@ const CreatureMediaSchema = new mongoose.Schema(
         value: String,
       }
     ],
+    notFound: { type: Boolean, default: false },
     lastUpdated: { type: Date, default: Date.now },
   },
   { timestamps: true }

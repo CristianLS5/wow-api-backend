@@ -10,6 +10,7 @@ import mountRoutes from "./routes/mountRoutes";
 import itemRoutes from "./routes/itemRoutes";
 import creatureRoutes from "./routes/creatureRoutes";
 import petRoutes from "./routes/petRoutes";
+import toyRoutes from "./routes/toyRoutes";
 
 // Load environment variables first
 dotenv.config();
@@ -64,6 +65,7 @@ app.use("/api/mounts", mountRoutes);
 app.use("/api/items", itemRoutes);
 app.use("/api/creatures", creatureRoutes);
 app.use("/api/pets", petRoutes);
+app.use("/api/toys", toyRoutes);
 
 // Error handling middleware
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
