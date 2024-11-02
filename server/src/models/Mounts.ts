@@ -7,6 +7,8 @@ const MountsSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       required: true,
     },
+    spellId: { type: Number, default: null },
+    itemId: { type: Number, default: null },
     lastUpdated: { type: Date, default: Date.now },
   },
   { timestamps: true }
