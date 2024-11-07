@@ -4,6 +4,7 @@ import CharacterMounts from "../models/CollectionsMounts";
 import CharacterPets from "../models/CollectionsPets";
 import CharacterToys from "../models/CollectionsToys";
 import CharacterTransmogs from "../models/CollectionsTransmogs";
+import CharacterHeirlooms from "../models/CollectionsHeirlooms";
 import { handleApiError } from "../utils/errorHandler";
 import { Model } from "mongoose";
 
@@ -28,8 +29,12 @@ interface TransmogResponse {
   }>;
 }
 
-type CollectionType = "mounts" | "pets" | "toys" | "transmogs";
-type CollectionResponse = MountsResponse | PetsResponse | ToysResponse | TransmogResponse;
+interface HeirloomsResponse {
+  heirlooms: Array<{ heirloom: { id: number; name: string; }; }>;
+}
+
+type CollectionType = "mounts" | "pets" | "toys" | "transmogs" | "heirlooms";
+type CollectionResponse = MountsResponse | PetsResponse | ToysResponse | TransmogResponse | HeirloomsResponse;
 
 const fetchCollectionData = async <T extends CollectionResponse>(
   req: Request,
@@ -89,6 +94,8 @@ function isValidResponse(
       return Array.isArray((data as ToysResponse).toys);
     case 'transmogs':
       return Array.isArray((data as TransmogResponse).appearance_sets);
+    case 'heirlooms':
+      return Array.isArray((data as HeirloomsResponse).heirlooms);
     default:
       return false;
   }
@@ -129,5 +136,17 @@ export const getCharacterTransmogs = async (
     res,
     "transmogs",
     CharacterTransmogs
+  );
+};
+
+export const getCharacterHeirlooms = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  await fetchCollectionData<HeirloomsResponse>(
+    req,
+    res,
+    "heirlooms",
+    CharacterHeirlooms
   );
 };
