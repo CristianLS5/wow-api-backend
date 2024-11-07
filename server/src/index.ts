@@ -12,6 +12,7 @@ import creatureRoutes from "./routes/creatureRoutes";
 import petRoutes from "./routes/petRoutes";
 import toyRoutes from "./routes/toyRoutes";
 import transmogRoutes from "./routes/transmogRoutes";
+import heirloomRoutes from "./routes/heirloomRoutes";
 
 // Load environment variables first
 dotenv.config();
@@ -68,6 +69,7 @@ app.use("/api/creatures", creatureRoutes);
 app.use("/api/pets", petRoutes);
 app.use("/api/toys", toyRoutes);
 app.use("/api/transmogs", transmogRoutes);
+app.use("/api/heirlooms", heirloomRoutes);
 
 // Error handling middleware
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
