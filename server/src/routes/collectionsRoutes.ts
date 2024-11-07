@@ -15,5 +15,9 @@ router.get(
   "/:realmSlug/:characterName/pets",
   collectionsController.getCharacterPets as express.RequestHandler
 );
+router.get(
+  "/:realmSlug/:characterName/transmogs",
+  collectionsController.getCharacterTransmogs as express.RequestHandler
+);
 
 export default router;
