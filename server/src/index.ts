@@ -13,6 +13,8 @@ import petRoutes from "./routes/petRoutes";
 import toyRoutes from "./routes/toyRoutes";
 import transmogRoutes from "./routes/transmogRoutes";
 import heirloomRoutes from "./routes/heirloomRoutes";
+import achievementRoutes from "./routes/achievementRoutes";
+import characterAchievementRoutes from "./routes/characterAchievementRoutes";
 
 // Load environment variables first
 dotenv.config();
@@ -70,6 +72,8 @@ app.use("/api/pets", petRoutes);
 app.use("/api/toys", toyRoutes);
 app.use("/api/transmogs", transmogRoutes);
 app.use("/api/heirlooms", heirloomRoutes);
+app.use("/api/achievements", achievementRoutes);
+app.use("/api/character", characterAchievementRoutes);
 
 // Error handling middleware
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
