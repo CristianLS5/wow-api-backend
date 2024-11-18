@@ -15,5 +15,4 @@ router.get(
   "/:realmSlug/:characterName/profile",
   characterController.getCharacterProfile as express.RequestHandler
 );
-
 export default router;

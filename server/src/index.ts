@@ -15,6 +15,7 @@ import transmogRoutes from "./routes/transmogRoutes";
 import heirloomRoutes from "./routes/heirloomRoutes";
 import achievementRoutes from "./routes/achievementRoutes";
 import characterAchievementRoutes from "./routes/characterAchievementRoutes";
+import reputationsRoutes from "./routes/reputationsRoutes";
 
 // Load environment variables first
 dotenv.config();
@@ -74,6 +75,7 @@ app.use("/api/transmogs", transmogRoutes);
 app.use("/api/heirlooms", heirloomRoutes);
 app.use("/api/achievements", achievementRoutes);
 app.use("/api/character", characterAchievementRoutes);
+app.use("/api/reputations", reputationsRoutes); 
 
 // Error handling middleware
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
