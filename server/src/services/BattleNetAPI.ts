@@ -22,9 +22,14 @@ class BattleNetAPI {
     namespace?: string
   ): Promise<T> {
     const token = await this.ensureValidToken();
-    const defaultNamespace = endpoint.includes("/profile/")
-      ? "profile"
-      : "static";
+    
+    // Determine the correct namespace
+    let defaultNamespace = "static";
+    if (endpoint.includes("/profile/")) {
+      defaultNamespace = "profile";
+    } else if (endpoint.includes("mythic-keystone")) {
+      defaultNamespace = "dynamic";
+    }
 
     try {
       const response = await axios.get<T>(

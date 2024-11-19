@@ -16,22 +16,26 @@ import heirloomRoutes from "./routes/heirloomRoutes";
 import achievementRoutes from "./routes/achievementRoutes";
 import characterAchievementRoutes from "./routes/characterAchievementRoutes";
 import reputationsRoutes from "./routes/reputationsRoutes";
+import dungeonsRoutes from "./routes/dungeonsRoutes";
+import affixesRoutes from "./routes/affixesRoutes";
 
 // Load environment variables first
 dotenv.config();
 
 // Validate required environment variables
 const requiredEnvVars = [
-  'BNET_REGION',
-  'BNET_CLIENT_ID',
-  'BNET_CLIENT_SECRET',
-  'BNET_CALLBACK_URL',
-  'SESSION_SECRET',
+  "BNET_REGION",
+  "BNET_CLIENT_ID",
+  "BNET_CLIENT_SECRET",
+  "BNET_CALLBACK_URL",
+  "SESSION_SECRET",
 ];
 
-const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
+const missingEnvVars = requiredEnvVars.filter((envVar) => !process.env[envVar]);
 if (missingEnvVars.length > 0) {
-  throw new Error(`Missing required environment variables: ${missingEnvVars.join(', ')}`);
+  throw new Error(
+    `Missing required environment variables: ${missingEnvVars.join(", ")}`
+  );
 }
 
 const app = express();
@@ -53,11 +57,11 @@ app.use(
     secret: process.env.SESSION_SECRET!,
     resave: false,
     saveUninitialized: false, // Changed to false for better security
-    cookie: { 
+    cookie: {
       secure: process.env.NODE_ENV === "production",
       httpOnly: true,
-      sameSite: process.env.NODE_ENV === "production" ? 'strict' : 'lax',
-      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+      sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
     },
   })
 );
@@ -75,20 +79,24 @@ app.use("/api/transmogs", transmogRoutes);
 app.use("/api/heirlooms", heirloomRoutes);
 app.use("/api/achievements", achievementRoutes);
 app.use("/api/character", characterAchievementRoutes);
-app.use("/api/reputations", reputationsRoutes); 
+app.use("/api/reputations", reputationsRoutes);
+app.use("/api/dungeons", dungeonsRoutes);
+app.use("/api/affixes", affixesRoutes);
 
 // Error handling middleware
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-  console.error('Unhandled error:', err);
-  res.status(500).json({ 
-    error: process.env.NODE_ENV === 'production' 
-      ? 'Internal server error' 
-      : err.message 
+  console.error("Unhandled error:", err);
+  res.status(500).json({
+    error:
+      process.env.NODE_ENV === "production"
+        ? "Internal server error"
+        : err.message,
   });
 });
 
 // MongoDB connection
-const mongoUri = process.env.MONGODB_URI || "mongodb://mongodb:27017/wow_character_viewer";
+const mongoUri =
+  process.env.MONGODB_URI || "mongodb://mongodb:27017/wow_character_viewer";
 
 mongoose
   .connect(mongoUri)
@@ -102,16 +110,16 @@ mongoose
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
   console.log(`Battle.net Region: ${process.env.BNET_REGION}`);
-  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`Environment: ${process.env.NODE_ENV || "development"}`);
 });
 
 // Handle uncaught exceptions
-process.on('uncaughtException', (error) => {
-  console.error('Uncaught Exception:', error);
+process.on("uncaughtException", (error) => {
+  console.error("Uncaught Exception:", error);
   process.exit(1);
 });
 
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled Rejection at:", promise, "reason:", reason);
   process.exit(1);
 });
