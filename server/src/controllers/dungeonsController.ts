@@ -21,12 +21,23 @@ interface DungeonRun {
     name: string;
     media?: string;
   };
-  is_completed: boolean;
-  affixes: Array<{
+  is_completed_within_time: boolean;
+  mythic_rating: {
+    color: {
+      r: number;
+      g: number;
+      b: number;
+      a: number;
+    };
+    rating: number;
+  };
+  keystone_affixes: Array<{
     id: number;
     name: string;
+    description: string;
+    icon: string;
   }>;
-  rating: number;
+  media: string;
 }
 
 interface DungeonSeasonDetails {
@@ -47,30 +58,71 @@ interface DungeonSeasonDetails {
 }
 
 interface DungeonSeasonResponse {
+  _links: {
+    self: {
+      href: string;
+    };
+  };
   season: {
     id: number;
   };
-  best_runs: Array<{
-    completed_timestamp: number;
-    duration: number;
-    keystone_level: number;
-    dungeon: {
-      name: string;
-      id: number;
+  best_runs: DungeonRun[];
+  mythic_rating: {
+    color: {
+      r: number;
+      g: number;
+      b: number;
+      a: number;
     };
-    is_completed_within_time: boolean;
-    mythic_rating: {
-      rating: number;
-    };
-  }>;
+    rating: number;
+  };
   character: {
     name: string;
     id: number;
-  };
-  mythic_rating: {
-    rating: number;
+    realm: {
+      name: string;
+      id: number;
+      slug: string;
+    };
   };
 }
+
+const getDungeonMedia = async (dungeonName: string): Promise<string | null> => {
+  try {
+    // Get dungeon index first
+    const dungeonIndex = await BattleNetAPI.makeRequest<{
+      instances: Array<{
+        id: number;
+        name: string;
+      }>;
+    }>("/data/wow/journal-instance/index", {}, "static");
+
+    // Clean up dungeon names for comparison
+    const cleanName = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const searchName = cleanName(dungeonName);
+    
+    const journalInstance = dungeonIndex.instances.find(
+      instance => cleanName(instance.name) === searchName
+    );
+
+    if (journalInstance) {
+      try {
+        const mediaData = await BattleNetAPI.makeRequest<{
+          assets: Array<{ key: string; value: string }>;
+        }>(`/data/wow/media/journal-instance/${journalInstance.id}`, {}, "static");
+        
+        return mediaData.assets.find(asset => asset.key === "tile")?.value || null;
+      } catch (error) {
+        console.error(`Failed to fetch media for dungeon ${dungeonName}:`, error);
+        return null;
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error(`Failed to fetch dungeon index:`, error);
+    return null;
+  }
+};
 
 export const getCharacterDungeonProfile = async (
   req: Request,
@@ -79,68 +131,128 @@ export const getCharacterDungeonProfile = async (
   const { realmSlug, characterName } = req.params;
 
   try {
+    console.log('=== DUNGEON PROFILE START ===');
+    console.log('Request params:', { realmSlug, characterName });
+
     // Check cache first
     const cachedData = await CharacterDungeons.findOne({
       realmSlug,
       characterName: characterName.toLowerCase(),
-      lastUpdated: { $gt: new Date(Date.now() - 1 * 60 * 60 * 1000) },
+      lastUpdated: { $gt: new Date(Date.now() - 24 * 60 * 60 * 1000) },
     });
+    console.log('Cache check result:', cachedData ? 'Found in cache' : 'Not in cache');
 
     if (cachedData) {
+      console.log('Returning cached data');
       res.json(cachedData);
       return;
     }
 
-    // Get current season data
+    // Get current season
     const currentSeason = await DungeonSeason.findOne({ isCurrent: true });
+    console.log('Current season:', currentSeason);
     
-    let seasonsMap = new Map();
-    
-    if (currentSeason) {
-      try {
-        const seasonData = await BattleNetAPI.makeRequest<DungeonSeasonResponse>(
-          `/profile/wow/character/${realmSlug}/${characterName.toLowerCase()}/mythic-keystone-profile/season/${currentSeason.id}`,
-          {},
-          "profile"
-        );
-
-        seasonsMap.set(currentSeason.id.toString(), {
-          seasonId: currentSeason.id,
-          bestRuns: seasonData.best_runs.map(run => ({
-            completedTimestamp: new Date(run.completed_timestamp),
-            duration: run.duration,
-            keystoneLevel: run.keystone_level,
-            dungeon: {
-              id: run.dungeon.id,
-              name: run.dungeon.name,
-            },
-            isCompleted: run.is_completed_within_time,
-            rating: run.mythic_rating.rating
-          })),
-          rating: seasonData.mythic_rating?.rating || 0
-        });
-      } catch (error) {
-        console.error("Error fetching season data:", error);
-      }
+    if (!currentSeason) {
+      console.error('No current season found!');
+      throw new Error("No current season found");
     }
 
-    // Transform the data to match your schema
-    const transformedData = {
-      realmSlug,
-      characterName: characterName.toLowerCase(),
-      seasons: seasonsMap,
-      lastUpdated: new Date(),
-    };
+    // API request
+    console.log('Making API request for season:', currentSeason.id);
+    const seasonData = await BattleNetAPI.makeRequest<DungeonSeasonResponse>(
+      `/profile/wow/character/${realmSlug}/${characterName.toLowerCase()}/mythic-keystone-profile/season/${currentSeason.id}`,
+      {},
+      "profile"
+    );
+    console.log('API Response received:', JSON.stringify(seasonData, null, 2));
 
-    // Save to cache
-    await CharacterDungeons.findOneAndUpdate(
-      { realmSlug, characterName: characterName.toLowerCase() },
-      transformedData,
-      { upsert: true, new: true }
+    // Transform the season data with media
+    const bestRunsWithMedia = await Promise.all(
+      (seasonData.best_runs || []).map(async (run) => {
+        const media = await getDungeonMedia(run.dungeon.name);
+        return {
+          completedTimestamp: new Date(run.completed_timestamp),
+          duration: run.duration,
+          keystoneLevel: run.keystone_level,
+          dungeon: {
+            id: run.dungeon.id,
+            name: run.dungeon.name,
+            media,
+          },
+          isCompleted: run.is_completed_within_time,
+          mythic_rating: {
+            color: run.mythic_rating?.color || {
+              r: 0,
+              g: 0,
+              b: 0,
+              a: 0
+            },
+            rating: run.mythic_rating?.rating || 0
+          },
+          keystone_affixes: run.keystone_affixes?.map(affix => ({
+            id: affix.id,
+            name: affix.name,
+            description: affix.description || '',
+            icon: affix.icon || ''
+          })) || []
+        };
+      })
     );
 
-    res.json(transformedData);
+    console.log('Transformed runs:', bestRunsWithMedia);
+
+    const seasonsData = {
+      [currentSeason.id]: {
+        seasonId: currentSeason.id,
+        bestRuns: bestRunsWithMedia,
+        mythic_rating: {
+          color: seasonData.mythic_rating?.color || {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 0
+          },
+          rating: seasonData.mythic_rating?.rating || 0
+        },
+        character: seasonData.character
+      }
+    };
+
+    console.log('Final seasons data structure:', seasonsData);
+
+    // Update or create document
+    const savedData = await CharacterDungeons.findOneAndUpdate(
+      { 
+        realmSlug, 
+        characterName: characterName.toLowerCase() 
+      },
+      {
+        $set: {
+          realmSlug,
+          characterName: characterName.toLowerCase(),
+          seasons: seasonsData,
+          lastUpdated: new Date()
+        }
+      },
+      { 
+        upsert: true, 
+        new: true,
+        runValidators: true 
+      }
+    );
+
+    console.log('Saved data:', savedData);
+
+    if (!savedData) {
+      console.error('Failed to save data - savedData is null');
+    }
+
+    console.log('=== DUNGEON PROFILE END ===');
+    res.json(savedData);
+
   } catch (error) {
+    console.error('=== DUNGEON PROFILE ERROR ===');
+    console.error('Error details:', error);
     handleApiError(error, res, "fetch character mythic keystone profile");
   }
 };
@@ -149,93 +261,112 @@ export const getCharacterDungeonSeasonDetails = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  try {
-    const { realmSlug, characterName, seasonId } = req.params;
+  const { realmSlug, characterName, seasonId } = req.params;
 
-    // Get season details from API
+  try {
+    console.log('\n=== DUNGEON SEASON DETAILS START ===');
+    console.log('Params:', { realmSlug, characterName, seasonId });
+
+    // Check cache first
+    const cachedData = await CharacterDungeons.findOne({
+      realmSlug,
+      characterName: characterName.toLowerCase(),
+      [`seasons.${seasonId}`]: { $exists: true },
+      lastUpdated: { $gt: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+    });
+
+    console.log('Cache check result:', cachedData ? 'Found in cache' : 'Not in cache');
+
+    if (cachedData?.seasons?.[seasonId]) {
+      console.log('Returning cached season data');
+      res.json(cachedData.seasons[seasonId]);
+      return;
+    }
+
+    console.log('Fetching fresh data from API');
+    // Get season data from API
     const seasonData = await BattleNetAPI.makeRequest<DungeonSeasonResponse>(
       `/profile/wow/character/${realmSlug}/${characterName.toLowerCase()}/mythic-keystone-profile/season/${seasonId}`,
       {},
       "profile"
     );
+    console.log('API Response received:', JSON.stringify(seasonData, null, 2));
 
-    // Get dungeon index to map journal IDs
-    const dungeonIndex = await BattleNetAPI.makeRequest<{
-      instances: Array<{
-        id: number;
-        name: string;
-      }>;
-    }>("/data/wow/journal-instance/index", {}, "static");
+    // Transform the data
+    const bestRunsWithMedia = await Promise.all(
+      (seasonData.best_runs || []).map(async (run) => {
+        const media = await getDungeonMedia(run.dungeon.name);
+        return {
+          completedTimestamp: new Date(run.completed_timestamp),
+          duration: run.duration,
+          keystoneLevel: run.keystone_level,
+          dungeon: {
+            id: run.dungeon.id,
+            name: run.dungeon.name,
+            media,
+          },
+          isCompleted: run.is_completed_within_time,
+          mythic_rating: {
+            color: run.mythic_rating?.color || {
+              r: 0,
+              g: 0,
+              b: 0,
+              a: 0
+            },
+            rating: run.mythic_rating?.rating || 0
+          },
+          keystone_affixes: run.keystone_affixes?.map(affix => ({
+            id: affix.id,
+            name: affix.name,
+            description: affix.description || '',
+            icon: affix.icon || ''
+          })) || []
+        };
+      })
+    );
 
-    // Create a map to store best runs per dungeon
-    const bestRunsMap = new Map();
+    console.log('Transformed runs:', JSON.stringify(bestRunsWithMedia, null, 2));
 
-    // Helper function to find journal instance and get media
-    const getDungeonMedia = async (dungeonName: string): Promise<string | null> => {
-      // Clean up dungeon names for comparison
-      const cleanName = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
-      const searchName = cleanName(dungeonName);
-      
-      const journalInstance = dungeonIndex.instances.find(
-        instance => cleanName(instance.name) === searchName
-      );
-
-      if (journalInstance) {
-        try {
-          const mediaData = await BattleNetAPI.makeRequest<{
-            assets: Array<{ key: string; value: string }>;
-          }>(`/data/wow/media/journal-instance/${journalInstance.id}`, {}, "static");
-          
-          return mediaData.assets.find(asset => asset.key === "tile")?.value || null;
-        } catch (error) {
-          console.error(`Failed to fetch media for dungeon ${dungeonName}:`, error);
-          return null;
+    // Update the document
+    const savedData = await CharacterDungeons.findOneAndUpdate(
+      { 
+        realmSlug, 
+        characterName: characterName.toLowerCase() 
+      },
+      {
+        $set: {
+          [`seasons.${seasonId}`]: {
+            seasonId: parseInt(seasonId),
+            bestRuns: bestRunsWithMedia,
+            mythic_rating: {
+              color: seasonData.mythic_rating?.color || {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 0
+              },
+              rating: seasonData.mythic_rating?.rating || 0
+            },
+            character: seasonData.character
+          },
+          lastUpdated: new Date()
         }
+      },
+      { 
+        upsert: true, 
+        new: true 
       }
-      return null;
-    };
+    );
 
-    // First pass: Add completed runs
-    for (const run of seasonData.best_runs) {
-      if (run.is_completed_within_time) {
-        const dungeonId = run.dungeon.id;
-        if (!bestRunsMap.has(dungeonId)) {
-          const media = await getDungeonMedia(run.dungeon.name);
-          bestRunsMap.set(dungeonId, {
-            ...run,
-            media
-          });
-        }
-      }
-    }
+    console.log('Saved data:', JSON.stringify(savedData, null, 2));
+    console.log('=== DUNGEON SEASON DETAILS END ===\n');
 
-    // Second pass: Add non-completed runs only if no completed run exists
-    for (const run of seasonData.best_runs) {
-      if (!run.is_completed_within_time) {
-        const dungeonId = run.dungeon.id;
-        if (!bestRunsMap.has(dungeonId)) {
-          const media = await getDungeonMedia(run.dungeon.name);
-          bestRunsMap.set(dungeonId, {
-            ...run,
-            media
-          });
-        }
-      }
-    }
-
-    // Construct response
-    const response = {
-      ...seasonData,
-      best_runs: Array.from(bestRunsMap.values()),
-    };
-
-    res.json(response);
-    return;
+    res.json(savedData?.seasons?.[seasonId]);
 
   } catch (error) {
-    console.error("Error in getCharacterDungeonSeasonDetails:", error);
+    console.error('=== DUNGEON SEASON DETAILS ERROR ===');
+    console.error('Error details:', error);
     handleApiError(error, res, "fetch character dungeon season details");
-    return;
   }
 };
 

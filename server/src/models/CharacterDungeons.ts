@@ -5,35 +5,18 @@ const CharacterDungeonsSchema = new mongoose.Schema(
     realmSlug: { type: String, required: true },
     characterName: { type: String, required: true },
     seasons: {
-      type: Map,
-      of: {
-        seasonId: Number,
-        bestRuns: [
-          {
-            completedTimestamp: Date,
-            duration: Number,
-            keystoneLevel: Number,
-            dungeon: {
-              id: Number,
-              name: String,
-              media: String,
-            },
-            isCompleted: Boolean,
-            affixes: [
-              {
-                id: Number,
-                name: String,
-              },
-            ],
-            rating: Number,
-          },
-        ],
-        rating: Number,
-      },
+      type: mongoose.Schema.Types.Mixed,
+      required: true,
+      default: {}
     },
     lastUpdated: { type: Date, default: Date.now },
   },
   { timestamps: true }
 );
+
+CharacterDungeonsSchema.pre('save', function(next) {
+  this.markModified('seasons');
+  next();
+});
 
 export default mongoose.model("CharacterDungeons", CharacterDungeonsSchema);
