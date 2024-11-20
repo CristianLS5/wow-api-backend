@@ -4,13 +4,6 @@ import { handleApiError } from "../utils/errorHandler";
 import CharacterDungeons from "../models/CharacterDungeons";
 import DungeonSeason from "../models/DungeonsSeason";
 
-interface DungeonProfile {
-  currentPeriod: {
-    period: number;
-    best_runs: Array<DungeonRun>;
-  };
-}
-
 interface DungeonSeason {
   season: {
     id: number;
@@ -98,47 +91,52 @@ export const getCharacterDungeonProfile = async (
       return;
     }
 
-    // Add type information to makeRequest
-    const dungeonData = await BattleNetAPI.makeRequest<DungeonProfile>(
-      `/profile/wow/character/${realmSlug}/${characterName.toLowerCase()}/mythic-keystone-profile`,
-      {},
-      "profile"
-    );
+    // Get current season data
+    const currentSeason = await DungeonSeason.findOne({ isCurrent: true });
+    
+    let seasonsMap = new Map();
+    
+    if (currentSeason) {
+      try {
+        const seasonData = await BattleNetAPI.makeRequest<DungeonSeasonResponse>(
+          `/profile/wow/character/${realmSlug}/${characterName.toLowerCase()}/mythic-keystone-profile/season/${currentSeason.id}`,
+          {},
+          "profile"
+        );
+
+        seasonsMap.set(currentSeason.id.toString(), {
+          seasonId: currentSeason.id,
+          bestRuns: seasonData.best_runs.map(run => ({
+            completedTimestamp: new Date(run.completed_timestamp),
+            duration: run.duration,
+            keystoneLevel: run.keystone_level,
+            dungeon: {
+              id: run.dungeon.id,
+              name: run.dungeon.name,
+            },
+            isCompleted: run.is_completed_within_time,
+            rating: run.mythic_rating.rating
+          })),
+          rating: seasonData.mythic_rating?.rating || 0
+        });
+      } catch (error) {
+        console.error("Error fetching season data:", error);
+      }
+    }
 
     // Transform the data to match your schema
     const transformedData = {
-      currentPeriod: dungeonData.currentPeriod
-        ? {
-            period: dungeonData.currentPeriod.period,
-            bestRuns:
-              dungeonData.currentPeriod.best_runs?.map((run) => ({
-                completedTimestamp: new Date(run.completed_timestamp),
-                duration: run.duration,
-                keystoneLevel: run.keystone_level,
-                dungeon: {
-                  id: run.dungeon.id,
-                  name: run.dungeon.name,
-                  media: run.dungeon.media,
-                },
-                isCompleted: run.is_completed,
-                affixes: run.affixes?.map((affix) => ({
-                  id: affix.id,
-                  name: affix.name,
-                })),
-                rating: run.rating,
-              })) || [],
-          }
-        : null,
+      realmSlug,
+      characterName: characterName.toLowerCase(),
+      seasons: seasonsMap,
+      lastUpdated: new Date(),
     };
 
     // Save to cache
     await CharacterDungeons.findOneAndUpdate(
       { realmSlug, characterName: characterName.toLowerCase() },
-      {
-        ...transformedData,
-        lastUpdated: new Date(),
-      },
-      { upsert: true }
+      transformedData,
+      { upsert: true, new: true }
     );
 
     res.json(transformedData);

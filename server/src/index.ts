@@ -18,6 +18,7 @@ import characterAchievementRoutes from "./routes/characterAchievementRoutes";
 import reputationsRoutes from "./routes/reputationsRoutes";
 import dungeonsRoutes from "./routes/dungeonsRoutes";
 import affixesRoutes from "./routes/affixesRoutes";
+import raidsRoutes from "./routes/raidsRoutes";
 
 // Load environment variables first
 dotenv.config();
@@ -82,6 +83,7 @@ app.use("/api/character", characterAchievementRoutes);
 app.use("/api/reputations", reputationsRoutes);
 app.use("/api/dungeons", dungeonsRoutes);
 app.use("/api/affixes", affixesRoutes);
+app.use("/api/raids", raidsRoutes);
 
 // Error handling middleware
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
