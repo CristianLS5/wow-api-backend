@@ -1,18 +1,50 @@
-import express, { Request, Response, NextFunction } from "express";
+import express, { NextFunction, Request, Response } from "express";
 import session from "express-session";
 import dotenv from "dotenv";
 import mongoose from "mongoose";
 import cors from "cors";
-import BattleNetAPI from "./battlenet-api";
-import CharacterEquipment from "./models/CharacterEquipment";
-import CharacterMedia from "./models/CharacterMedia";
+import authRoutes from "./routes/authRoutes";
+import characterRoutes from "./routes/characterRoutes";
+import collectionsRoutes from "./routes/collectionsRoutes";
+import mountRoutes from "./routes/mountRoutes";
+import itemRoutes from "./routes/itemRoutes";
+import creatureRoutes from "./routes/creatureRoutes";
+import petRoutes from "./routes/petRoutes";
+import toyRoutes from "./routes/toyRoutes";
+import transmogRoutes from "./routes/transmogRoutes";
+import heirloomRoutes from "./routes/heirloomRoutes";
+import achievementRoutes from "./routes/achievementRoutes";
+import characterAchievementRoutes from "./routes/characterAchievementRoutes";
+import reputationsRoutes from "./routes/reputationsRoutes";
+import dungeonsRoutes from "./routes/dungeonsRoutes";
+import affixesRoutes from "./routes/affixesRoutes";
+import raidsRoutes from "./routes/raidsRoutes";
+
+// Load environment variables first
 dotenv.config();
+
+// Validate required environment variables
+const requiredEnvVars = [
+  "BNET_REGION",
+  "BNET_CLIENT_ID",
+  "BNET_CLIENT_SECRET",
+  "BNET_CALLBACK_URL",
+  "SESSION_SECRET",
+];
+
+const missingEnvVars = requiredEnvVars.filter((envVar) => !process.env[envVar]);
+if (missingEnvVars.length > 0) {
+  throw new Error(
+    `Missing required environment variables: ${missingEnvVars.join(", ")}`
+  );
+}
 
 const app = express();
 const port = process.env.PORT || 3000;
 
+// CORS configuration
 const corsOptions = {
-  origin: "http://localhost:4200",
+  origin: process.env.FRONTEND_URL || "http://localhost:4200",
   optionsSuccessStatus: 200,
   credentials: true,
 };
@@ -20,194 +52,76 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
+// Session configuration
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || "your_session_secret",
+    secret: process.env.SESSION_SECRET!,
     resave: false,
-    saveUninitialized: true,
-    cookie: { secure: process.env.NODE_ENV === "production" },
+    saveUninitialized: false, // Changed to false for better security
+    cookie: {
+      secure: process.env.NODE_ENV === "production",
+      httpOnly: true,
+      sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    },
   })
 );
 
-interface ExtendedRequest extends Request {
-  session: session.Session &
-    Partial<session.SessionData> & {
-      oauthState?: string;
-      accessToken?: string;
-    };
-}
+// Routes
+app.use("/auth", authRoutes);
+app.use("/api/character", characterRoutes);
+app.use("/api/collections", collectionsRoutes);
+app.use("/api/mounts", mountRoutes);
+app.use("/api/items", itemRoutes);
+app.use("/api/creatures", creatureRoutes);
+app.use("/api/pets", petRoutes);
+app.use("/api/toys", toyRoutes);
+app.use("/api/transmogs", transmogRoutes);
+app.use("/api/heirlooms", heirloomRoutes);
+app.use("/api/achievements", achievementRoutes);
+app.use("/api/character", characterAchievementRoutes);
+app.use("/api/reputations", reputationsRoutes);
+app.use("/api/dungeons", dungeonsRoutes);
+app.use("/api/affixes", affixesRoutes);
+app.use("/api/raids", raidsRoutes);
 
-app.get("/auth/bnet", (req: Request, res: Response, next: NextFunction) => {
-  const extendedReq = req as ExtendedRequest;
-  BattleNetAPI.getAuthorizationUrl()
-    .then(({ authUrl, state }) => {
-      extendedReq.session.oauthState = state;
-      res.redirect(authUrl);
-    })
-    .catch(next);
+// Error handling middleware
+app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+  console.error("Unhandled error:", err);
+  res.status(500).json({
+    error:
+      process.env.NODE_ENV === "production"
+        ? "Internal server error"
+        : err.message,
+  });
 });
 
-app.get("/auth/callback", (req: Request, res: Response) => {
-  const extendedReq = req as ExtendedRequest;
-  const { code, state } = extendedReq.query;
-
-  if (state !== extendedReq.session.oauthState) {
-    res.status(403).json({ error: "Invalid state parameter" });
-    return;
-  }
-
-  delete extendedReq.session.oauthState;
-
-  BattleNetAPI.getAccessToken(code as string)
-    .then((accessToken) => {
-      extendedReq.session.accessToken = accessToken;
-      res.redirect("http://localhost:4200/");
-    })
-    .catch((error) => {
-      console.error(
-        "Error exchanging code for token:",
-        error.response ? error.response.data : error.message
-      );
-      res
-        .status(500)
-        .json({ error: "Authentication failed", details: error.message });
-    });
-});
-
-app.get(
-  "/api/character/:realmSlug/:characterName/equipment",
-  async (req: Request, res: Response) => {
-    const { realmSlug, characterName } = req.params;
-
-    try {
-      let cachedData = await CharacterEquipment.findOne({
-        realmSlug: realmSlug.toLowerCase(),
-        characterName: characterName.toLowerCase(),
-      });
-
-      if (cachedData && cachedData.equipment) {
-        console.log("Found cached character equipment data");
-
-        // Check if icon URLs are missing and add them if necessary
-        let dataUpdated = false;
-        for (const item of cachedData.equipment.equipped_items) {
-          if (!item.iconUrl && item.item && item.item.id) {
-            console.log(`Fetching missing icon URL for item ${item.item.id}`);
-            item.iconUrl = await BattleNetAPI.getItemIcon(item.item.id);
-            dataUpdated = true;
-          }
-        }
-
-        if (dataUpdated) {
-          console.log("Updating cached data with new icon URLs");
-          await cachedData.save();
-        }
-
-        res.json(cachedData.equipment);
-        return;
-      }
-
-      console.log("Fetching new character equipment data");
-      const equipmentData = await BattleNetAPI.getCharacterEquipment(
-        realmSlug,
-        characterName
-      );
-
-      const newCachedData = await CharacterEquipment.findOneAndUpdate(
-        {
-          realmSlug: realmSlug.toLowerCase(),
-          characterName: characterName.toLowerCase(),
-        },
-        {
-          equipment: equipmentData,
-          lastUpdated: new Date(),
-        },
-        { upsert: true, new: true }
-      );
-
-      console.log("Character equipment data saved to database");
-      res.json(newCachedData.equipment);
-    } catch (error: unknown) {
-      console.error("Error fetching character equipment data:", error);
-      if (error instanceof Error) {
-        res.status(500).json({
-          error: "Failed to fetch character equipment data",
-          details: error.message,
-          stack: error.stack,
-        });
-      } else {
-        res.status(500).json({
-          error: "Failed to fetch character equipment data",
-          details: "An unknown error occurred",
-        });
-      }
-    }
-  }
-);
-
-app.get(
-  "/api/character/:realmSlug/:characterName/media",
-  async (req: Request, res: Response) => {
-    const { realmSlug, characterName } = req.params;
-
-    try {
-      let cachedData = await CharacterMedia.findOne({
-        realmSlug: realmSlug.toLowerCase(),
-        characterName: characterName.toLowerCase(),
-      });
-
-      if (cachedData && cachedData.media) {
-        console.log("Found cached character media data");
-        res.json(cachedData.media);
-        return;
-      }
-
-      console.log("Fetching new character media data");
-      const mediaData = await BattleNetAPI.getCharacterMedia(
-        realmSlug,
-        characterName
-      );
-
-      const newCachedData = await CharacterMedia.findOneAndUpdate(
-        {
-          realmSlug: realmSlug.toLowerCase(),
-          characterName: characterName.toLowerCase(),
-        },
-        {
-          media: mediaData,
-          lastUpdated: new Date(),
-        },
-        { upsert: true, new: true }
-      );
-
-      console.log("Character media data saved to database");
-      res.json(newCachedData.media);
-    } catch (error: unknown) {
-      console.error("Error fetching character media data:", error);
-      if (error instanceof Error) {
-        res.status(500).json({
-          error: "Failed to fetch character media data",
-          details: error.message,
-          stack: error.stack,
-        });
-      } else {
-        res.status(500).json({
-          error: "Failed to fetch character media data",
-          details: "An unknown error occurred",
-        });
-      }
-    }
-  }
-);
-
+// MongoDB connection
 const mongoUri =
   process.env.MONGODB_URI || "mongodb://mongodb:27017/wow_character_viewer";
 
 mongoose
   .connect(mongoUri)
   .then(() => console.log("Connected to MongoDB"))
-  .catch((err) => console.error("MongoDB connection error:", err));
+  .catch((err) => {
+    console.error("MongoDB connection error:", err);
+    process.exit(1); // Exit if MongoDB connection fails
+  });
 
+// Start server
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
+  console.log(`Battle.net Region: ${process.env.BNET_REGION}`);
+  console.log(`Environment: ${process.env.NODE_ENV || "development"}`);
+});
+
+// Handle uncaught exceptions
+process.on("uncaughtException", (error) => {
+  console.error("Uncaught Exception:", error);
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled Rejection at:", promise, "reason:", reason);
+  process.exit(1);
 });
