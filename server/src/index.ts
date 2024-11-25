@@ -19,6 +19,7 @@ import reputationsRoutes from "./routes/reputationsRoutes";
 import dungeonsRoutes from "./routes/dungeonsRoutes";
 import affixesRoutes from "./routes/affixesRoutes";
 import raidsRoutes from "./routes/raidsRoutes";
+import MongoDBStore from "connect-mongodb-session";
 
 // Load environment variables first
 dotenv.config();
@@ -30,6 +31,7 @@ const requiredEnvVars = [
   "BNET_CLIENT_SECRET",
   "BNET_CALLBACK_URL",
   "SESSION_SECRET",
+  "MONGODB_URI",
 ];
 
 const missingEnvVars = requiredEnvVars.filter((envVar) => !process.env[envVar]);
@@ -41,28 +43,55 @@ if (missingEnvVars.length > 0) {
 
 const app = express();
 const port = process.env.PORT || 3000;
+const mongoUri = process.env.MONGODB_URI!;
 
 // CORS configuration
 const corsOptions = {
   origin: process.env.FRONTEND_URL || "http://localhost:4200",
   optionsSuccessStatus: 200,
   credentials: true,
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "Cookie",
+    "X-Session-ID",
+    "X-Storage-Type",
+  ],
+  exposedHeaders: ["X-Session-ID"],
 };
 
 app.use(cors(corsOptions));
 app.use(express.json());
+
+// Create MongoDB store with proper type for error
+const MongoDBStoreSession = MongoDBStore(session);
+const store = new MongoDBStoreSession({
+  uri: mongoUri,
+  collection: 'sessions',
+  expires: 30 * 24 * 60 * 60 * 1000, // 30 days in milliseconds
+  databaseName: 'wow_character_viewer'
+});
+
+// Handle store errors with proper typing
+store.on('error', function(error: Error) {
+  console.error('Session store error:', error);
+});
 
 // Session configuration
 app.use(
   session({
     secret: process.env.SESSION_SECRET!,
     resave: false,
-    saveUninitialized: false, // Changed to false for better security
+    saveUninitialized: false,
+    name: "bnet_session",
+    store: store,
+    rolling: true,
     cookie: {
       secure: process.env.NODE_ENV === "production",
       httpOnly: true,
       sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      path: "/",
     },
   })
 );
@@ -97,9 +126,6 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
 });
 
 // MongoDB connection
-const mongoUri =
-  process.env.MONGODB_URI || "mongodb://mongodb:27017/wow_character_viewer";
-
 mongoose
   .connect(mongoUri)
   .then(() => console.log("Connected to MongoDB"))

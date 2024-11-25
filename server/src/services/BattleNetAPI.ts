@@ -54,7 +54,7 @@ class BattleNetAPI {
 
   async getAccessToken(
     code: string
-  ): Promise<{ token: string; expiresIn: number }> {
+  ): Promise<{ token: string; refreshToken: string; expiresIn: number }> {
     const tokenUrl = `https://${this.region}.battle.net/oauth/token`;
     const params = new URLSearchParams({
       grant_type: "authorization_code",
@@ -75,6 +75,7 @@ class BattleNetAPI {
 
       return {
         token: response.data.access_token,
+        refreshToken: response.data.refresh_token,
         expiresIn: response.data.expires_in,
       };
     } catch (error) {
@@ -131,6 +132,33 @@ class BattleNetAPI {
     } catch (error) {
       console.error("Error validating token:", error);
       return false;
+    }
+  }
+
+  async refreshAccessToken(refreshToken: string): Promise<{ token: string; refreshToken: string; expiresIn: number }> {
+    const tokenUrl = `https://${this.region}.battle.net/oauth/token`;
+    const params = new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      client_id: process.env.BNET_CLIENT_ID || '',
+      client_secret: process.env.BNET_CLIENT_SECRET || '',
+    });
+
+    try {
+      const response = await axios.post(tokenUrl, params.toString(), {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      });
+
+      return {
+        token: response.data.access_token,
+        refreshToken: response.data.refresh_token,
+        expiresIn: response.data.expires_in,
+      };
+    } catch (error) {
+      console.error('Error refreshing token:', error);
+      throw error;
     }
   }
 }
