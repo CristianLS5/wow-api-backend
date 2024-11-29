@@ -19,7 +19,7 @@ import reputationsRoutes from "./routes/reputationsRoutes";
 import dungeonsRoutes from "./routes/dungeonsRoutes";
 import affixesRoutes from "./routes/affixesRoutes";
 import raidsRoutes from "./routes/raidsRoutes";
-import MongoDBStore from "connect-mongodb-session";
+import MongoStore from "connect-mongo";
 
 // Load environment variables first
 dotenv.config();
@@ -64,21 +64,14 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
-// Create MongoDB store with proper type for error
-const MongoDBStoreSession = MongoDBStore(session);
-const store = new MongoDBStoreSession({
-  uri: mongoUri,
-  collection: 'sessions',
-  expires: 30 * 24 * 60 * 60 * 1000, // 30 days in milliseconds
-  databaseName: 'wow_character_viewer'
+const store = MongoStore.create({
+  mongoUrl: mongoUri,
+  ttl: 30 * 24 * 60 * 60, // 30 days in seconds
+  collectionName: "sessions",
+  dbName: "wow_character_viewer",
 });
 
-// Handle store errors with proper typing
-store.on('error', function(error: Error) {
-  console.error('Session store error:', error);
-});
-
-// Session configuration
+// The rest of your session configuration remains the same
 app.use(
   session({
     secret: process.env.SESSION_SECRET!,
@@ -140,11 +133,12 @@ mongoose
     ssl: true,
     tls: true,
     tlsAllowInvalidCertificates: true,
+    dbName: "wow_character_viewer"
   } as mongoose.ConnectOptions)
   .then(() => console.log("Connected to MongoDB"))
   .catch((err) => {
     console.error("MongoDB connection error:", err);
-    process.exit(1); // Exit if MongoDB connection fails
+    process.exit(1);
   });
 
 // Start server
