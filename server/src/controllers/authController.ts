@@ -1,10 +1,10 @@
 import { Request, Response } from "express";
-import BattleNetAPI from "../services/BattleNetAPI";
 import { handleApiError } from "../utils/errorHandler";
 import crypto from "crypto";
 import { Session, SessionData } from "express-session";
 import { Cookie } from "express-session";
 import { getStore } from '../config/sessionStore';
+import BattleNetAPIInstance, { BattleNetAPI } from "../services/BattleNetAPI";
 
 // Define custom session data
 interface CustomSessionData {
@@ -44,31 +44,24 @@ export const getAuthorizationUrl = async (
   res: Response
 ): Promise<void> => {
   try {
-    if (!process.env.BNET_REGION || !process.env.BNET_CLIENT_ID || !process.env.BNET_CALLBACK_URL) {
-      throw new Error('Missing required environment variables');
-    }
-
     const state = crypto.randomBytes(16).toString("hex");
     
-    // Use the global oauth.battle.net endpoint
-    const params = new URLSearchParams();
-    
-    // Add parameters in this specific order
-    params.append("response_type", "code");
-    params.append("client_id", process.env.BNET_CLIENT_ID);
-    params.append("scope", "wow.profile");
-    params.append("state", state);
-    params.append("redirect_uri", process.env.BNET_CALLBACK_URL);
+    const params = new URLSearchParams({
+      response_type: "code",
+      client_id: process.env.BNET_CLIENT_ID!,
+      scope: "wow.profile",  // Required scope
+      state: state,
+      redirect_uri: process.env.BNET_CALLBACK_URL!
+    });
 
-    // Use the global OAuth endpoint
-    const authUrl = `https://oauth.battle.net/oauth/authorize?${params.toString()}`;
+    // Use us.battle.net instead of oauth.battle.net
+    const authUrl = `https://us.battle.net/oauth/authorize?${params.toString()}`;
 
     console.log('OAuth Request:', {
-      clientId: process.env.BNET_CLIENT_ID.substring(0, 5) + '...',
+      clientId: process.env.BNET_CLIENT_ID!.substring(0, 5) + '...',
       redirectUri: process.env.BNET_CALLBACK_URL,
-      region: process.env.BNET_REGION,
+      scope: 'wow.profile',
       state,
-      fullUrl: authUrl.replace(process.env.BNET_CLIENT_ID, 'MASKED_CLIENT_ID'),
       timestamp: new Date().toISOString()
     });
 
@@ -77,11 +70,7 @@ export const getAuthorizationUrl = async (
 
     res.redirect(authUrl);
   } catch (error) {
-    console.error('Auth URL Generation Error:', {
-      error: error instanceof Error ? error.message : 'Unknown error',
-      region: process.env.BNET_REGION,
-      timestamp: new Date().toISOString()
-    });
+    console.error('Auth URL Error:', error);
     handleApiError(error, res, "generate authorization URL");
   }
 };
@@ -138,7 +127,7 @@ export const handleCallback = async (
     });
 
     const frontendCallback =
-      req.session.frontendCallback || "http://localhost:4200/auth/callback";
+      req.session.frontendCallback || "https://wowcharacterviewer.com/auth/callback";
     const consent = req.session.consent === "true"; // Get consent from session
 
     if (state !== req.session.oauthState) {
@@ -240,7 +229,7 @@ export const validateToken = async (
       return;
     }
 
-    const isValid = await BattleNetAPI.validateToken(session.accessToken);
+    const isValid = await BattleNetAPIInstance.validateToken(session.accessToken);
 
     if (isValid) {
       // Touch the session
@@ -304,7 +293,7 @@ export const exchangeToken = async (
     }
 
     // Validate the token with Battle.net
-    const isValid = await BattleNetAPI.validateToken(token);
+    const isValid = await BattleNetAPIInstance.validateToken(token);
 
     if (!isValid) {
       res.status(401).json({ error: "Invalid token" });
@@ -360,7 +349,7 @@ export const refreshToken = async (
       token,
       refreshToken: newRefreshToken,
       expiresIn,
-    } = await BattleNetAPI.refreshAccessToken(refreshToken);
+    } = await BattleNetAPIInstance.refreshAccessToken(refreshToken);
 
     // Update session
     req.session.accessToken = token;
@@ -451,7 +440,7 @@ export const validateSession = async (
     }
 
     // Validate the token
-    const isValid = await BattleNetAPI.validateToken(session.accessToken);
+    const isValid = await BattleNetAPIInstance.validateToken(session.accessToken);
     if (!isValid) {
       res.json({
         isAuthenticated: false,

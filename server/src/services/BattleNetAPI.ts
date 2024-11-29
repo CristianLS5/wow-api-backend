@@ -3,7 +3,7 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-class BattleNetAPI {
+export class BattleNetAPI {
   private readonly API_DOMAIN = "api.blizzard.com";
   public region: string;
   private accessToken: string | null = null;
@@ -22,7 +22,7 @@ class BattleNetAPI {
     namespace?: string
   ): Promise<T> {
     const token = await this.ensureValidToken();
-    
+
     // Determine the correct namespace
     let defaultNamespace = "static";
     if (endpoint.includes("/profile/")) {
@@ -52,57 +52,35 @@ class BattleNetAPI {
     }
   }
 
-  async getAccessToken(
+  static async getAccessToken(
     code: string
-  ): Promise<{ token: string; refreshToken: string; expiresIn: number }> {
-    const tokenUrl = `https://${this.region}.battle.net/oauth/token`;
-    
-    // Add logging for debugging
-    console.log('Getting access token with config:', {
-      region: this.region,
-      callbackUrl: process.env.BNET_CALLBACK_URL,
-      clientId: process.env.BNET_CLIENT_ID?.substring(0, 8) + '...', // Log partial client ID for security
-      environment: process.env.NODE_ENV
-    });
+  ): Promise<{ token: string; refreshToken: string }> {
+    const credentials = Buffer.from(
+      `${process.env.BNET_CLIENT_ID}:${process.env.BNET_CLIENT_SECRET}`
+    ).toString("base64");
 
-    const params = new URLSearchParams({
-      grant_type: "authorization_code",
-      code: code,
-      redirect_uri: process.env.BNET_CALLBACK_URL || "",
-    });
+    const region = process.env.BNET_REGION?.toLowerCase() || 'eu';
 
-    try {
-      console.log('Making token request to:', tokenUrl);
-      const response = await axios.post(tokenUrl, params.toString(), {
-        auth: {
-          username: process.env.BNET_CLIENT_ID || "",
-          password: process.env.BNET_CLIENT_SECRET || "",
-        },
+    const response = await axios.post(
+      `https://${region}.battle.net/oauth/token`,
+      new URLSearchParams({
+        grant_type: "authorization_code",
+        code: code,
+        redirect_uri: process.env.BNET_CALLBACK_URL!,
+        scope: "wow.profile",
+      }),
+      {
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
+          Authorization: `Basic ${credentials}`,
         },
-      });
-
-      console.log('Token request successful');
-      return {
-        token: response.data.access_token,
-        refreshToken: response.data.refresh_token,
-        expiresIn: response.data.expires_in,
-      };
-    } catch (error) {
-      // Enhanced error logging
-      if (axios.isAxiosError(error)) {
-        console.error('Token request failed:', {
-          status: error.response?.status,
-          statusText: error.response?.statusText,
-          data: error.response?.data,
-          url: error.config?.url
-        });
-      } else {
-        console.error("Error getting access token:", error);
       }
-      throw error;
-    }
+    );
+
+    return {
+      token: response.data.access_token,
+      refreshToken: response.data.refresh_token,
+    };
   }
 
   public async ensureValidToken(): Promise<string> {
@@ -144,20 +122,20 @@ class BattleNetAPI {
 
   async validateToken(token: string): Promise<boolean> {
     try {
-      console.log('Validating token with Battle.net');
+      console.log("Validating token with Battle.net");
       await axios.get(`https://${this.region}.battle.net/oauth/check_token`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
       });
-      console.log('Token validation successful');
+      console.log("Token validation successful");
       return true;
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        console.error('Token validation failed:', {
+        console.error("Token validation failed:", {
           status: error.response?.status,
           statusText: error.response?.statusText,
-          data: error.response?.data
+          data: error.response?.data,
         });
       } else {
         console.error("Error validating token:", error);
@@ -166,19 +144,21 @@ class BattleNetAPI {
     }
   }
 
-  async refreshAccessToken(refreshToken: string): Promise<{ token: string; refreshToken: string; expiresIn: number }> {
+  async refreshAccessToken(
+    refreshToken: string
+  ): Promise<{ token: string; refreshToken: string; expiresIn: number }> {
     const tokenUrl = `https://${this.region}.battle.net/oauth/token`;
     const params = new URLSearchParams({
-      grant_type: 'refresh_token',
+      grant_type: "refresh_token",
       refresh_token: refreshToken,
-      client_id: process.env.BNET_CLIENT_ID || '',
-      client_secret: process.env.BNET_CLIENT_SECRET || '',
+      client_id: process.env.BNET_CLIENT_ID || "",
+      client_secret: process.env.BNET_CLIENT_SECRET || "",
     });
 
     try {
       const response = await axios.post(tokenUrl, params.toString(), {
         headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
+          "Content-Type": "application/x-www-form-urlencoded",
         },
       });
 
@@ -188,10 +168,11 @@ class BattleNetAPI {
         expiresIn: response.data.expires_in,
       };
     } catch (error) {
-      console.error('Error refreshing token:', error);
+      console.error("Error refreshing token:", error);
       throw error;
     }
   }
 }
 
+// Export a default instance
 export default new BattleNetAPI();
