@@ -59,8 +59,10 @@ const syncMountItems = async (): Promise<void> => {
       throw new Error("Database connection not established");
     }
     
+    const db = mongoose.connection.db as any;
+    
     // Then run the mount items aggregation
-    await runMountItemAggregation(mongoose.connection.db);
+    await runMountItemAggregation(db);
     
     console.log("Mount items sync completed successfully");
   } catch (error) {
