@@ -43,40 +43,28 @@ export const getAuthorizationUrl = async (
   _next: NextFunction
 ): Promise<void> => {
   try {
-    // Validate required environment variables
-    if (!process.env.BNET_CALLBACK_URL) {
-      throw new Error('BNET_CALLBACK_URL environment variable is not set');
-    }
-
     const state = crypto.randomBytes(16).toString("hex");
     
-    // Log the exact callback URL we're using
-    console.log('Auth Configuration:', {
-      callbackUrl: process.env.BNET_CALLBACK_URL,
-      region: BattleNetAPI.region,
-      timestamp: new Date().toISOString()
-    });
-
-    const authUrl = new URL(
-      `https://${BattleNetAPI.region}.battle.net/oauth/authorize`
-    );
+    // Use the correct OAuth endpoint as per documentation
+    const authUrl = new URL("https://oauth.battle.net/authorize");
     
-    // Set exact parameters as required by Battle.net
     authUrl.searchParams.set("client_id", process.env.BNET_CLIENT_ID!);
-    authUrl.searchParams.set("response_type", "code");
-    authUrl.searchParams.set("redirect_uri", process.env.BNET_CALLBACK_URL);
     authUrl.searchParams.set("scope", "wow.profile");
     authUrl.searchParams.set("state", state);
+    authUrl.searchParams.set("redirect_uri", process.env.BNET_CALLBACK_URL!);
+    authUrl.searchParams.set("response_type", "code");
 
-    // Store state in session
-    req.session.oauthState = state;
-    req.session.frontendCallback = req.query.callback as string || `${process.env.FRONTEND_URL}/auth/callback`;
-
-    console.log('Generated Auth URL:', {
+    // Log the exact URL we're generating
+    console.log('OAuth Request:', {
       url: authUrl.toString().replace(process.env.BNET_CLIENT_ID!, 'MASKED_CLIENT_ID'),
-      state: state,
+      redirectUri: process.env.BNET_CALLBACK_URL,
+      scope: 'wow.profile',
       timestamp: new Date().toISOString()
     });
+
+    // Store state for verification
+    req.session.oauthState = state;
+    req.session.frontendCallback = req.query.callback as string || `${process.env.FRONTEND_URL}/auth/callback`;
 
     res.redirect(authUrl.toString());
   } catch (error) {
