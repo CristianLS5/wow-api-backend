@@ -14,6 +14,7 @@ interface CustomSessionData {
   refreshToken?: string;
   isPersistent?: boolean;
   consent?: string;
+  region?: string;
 }
 
 // Extend the Session interface
@@ -35,6 +36,7 @@ interface StoredSession extends SessionData {
   refreshToken?: string;
   isPersistent?: boolean;
   consent?: string;
+  region?: string;
 }
 
 export const getAuthorizationUrl = async (
@@ -42,35 +44,46 @@ export const getAuthorizationUrl = async (
   res: Response
 ): Promise<void> => {
   try {
+    if (!process.env.BNET_REGION || !process.env.BNET_CLIENT_ID || !process.env.BNET_CALLBACK_URL) {
+      throw new Error('Missing required environment variables');
+    }
+
     const state = crypto.randomBytes(16).toString("hex");
     
-    // Create URL with all required parameters
+    // Normalize region to lowercase for URL construction
+    const region = process.env.BNET_REGION.toLowerCase();
+    
     const params = new URLSearchParams({
       response_type: "code",
-      client_id: process.env.BNET_CLIENT_ID!,
+      client_id: process.env.BNET_CLIENT_ID,
       scope: "wow.profile",
       state: state,
-      redirect_uri: process.env.BNET_CALLBACK_URL!
+      redirect_uri: process.env.BNET_CALLBACK_URL
     });
 
-    // Remove any additional parameters that might be getting added
-    const authUrl = `https://oauth.battle.net/authorize?${params.toString()}`;
+    // Use the regional endpoint
+    const authUrl = `https://${region}.battle.net/oauth/authorize?${params.toString()}`;
 
     console.log('OAuth Request:', {
-      clientId: process.env.BNET_CLIENT_ID!.substring(0, 5) + '...',
+      clientId: process.env.BNET_CLIENT_ID.substring(0, 5) + '...',
       redirectUri: process.env.BNET_CALLBACK_URL,
+      region: process.env.BNET_REGION,
+      normalizedRegion: region,
       state,
-      fullUrl: authUrl.replace(process.env.BNET_CLIENT_ID!, 'MASKED_CLIENT_ID'),
+      fullUrl: authUrl.replace(process.env.BNET_CLIENT_ID, 'MASKED_CLIENT_ID'),
       timestamp: new Date().toISOString()
     });
 
-    // Store state in session before redirect
     req.session.oauthState = state;
-    await req.session.save();  // Ensure session is saved
+    await req.session.save();
 
     res.redirect(authUrl);
   } catch (error) {
-    console.error('Auth URL Generation Error:', error);
+    console.error('Auth URL Generation Error:', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+      region: process.env.BNET_REGION,
+      timestamp: new Date().toISOString()
+    });
     handleApiError(error, res, "generate authorization URL");
   }
 };
