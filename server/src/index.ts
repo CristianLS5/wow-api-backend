@@ -19,6 +19,7 @@ import reputationsRoutes from "./routes/reputationsRoutes";
 import dungeonsRoutes from "./routes/dungeonsRoutes";
 import affixesRoutes from "./routes/affixesRoutes";
 import raidsRoutes from "./routes/raidsRoutes";
+import healthRoutes from './routes/healthRoutes';
 import { initializeStore } from './config/sessionStore';
 
 // Load environment variables first
@@ -101,6 +102,7 @@ app.use("/api/reputations", reputationsRoutes);
 app.use("/api/dungeons", dungeonsRoutes);
 app.use("/api/affixes", affixesRoutes);
 app.use("/api/raids", raidsRoutes);
+app.use('/health', healthRoutes);
 
 // Error handling middleware
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
