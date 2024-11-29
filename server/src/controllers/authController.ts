@@ -44,36 +44,50 @@ export const getAuthorizationUrl = async (
   res: Response
 ): Promise<void> => {
   try {
-    const state = crypto.randomBytes(16).toString("hex");
-    const region = process.env.BNET_REGION?.toLowerCase() || "eu";
+    const state = crypto.randomBytes(16).toString('hex');
+    
+    console.log('Pre-auth Session State:', {
+      sessionID: req.sessionID,
+      cookie: req.session.cookie
+    });
+
+    // Set the state in session
+    req.session.oauthState = state;
+    
+    // Force session save and wait for completion
+    await new Promise<void>((resolve, reject) => {
+      req.session.save((err) => {
+        if (err) {
+          console.error('Session save failed:', err);
+          reject(err);
+          return;
+        }
+        console.log('Session saved:', {
+          sessionID: req.sessionID,
+          state: state,
+          oauthState: req.session.oauthState
+        });
+        resolve();
+      });
+    });
 
     const params = new URLSearchParams({
-      response_type: "code",
+      response_type: 'code',
       client_id: process.env.BNET_CLIENT_ID!,
-      scope: "wow.profile",
+      scope: 'wow.profile',
       state: state,
-      redirect_uri: process.env.BNET_CALLBACK_URL!,
+      redirect_uri: process.env.BNET_CALLBACK_URL!
     });
 
-    // Use region-specific endpoint
-    const authUrl = `https://${region}.battle.net/oauth/authorize?${params.toString()}`;
-
-    console.log("OAuth Request:", {
-      clientId: process.env.BNET_CLIENT_ID!.substring(0, 5) + "...",
-      redirectUri: process.env.BNET_CALLBACK_URL,
-      scope: "wow.profile",
-      state,
-      region,
-      timestamp: new Date().toISOString(),
+    console.log('Redirecting to Battle.net:', {
+      sessionID: req.sessionID,
+      state: state
     });
 
-    req.session.oauthState = state;
-    await req.session.save();
-
-    res.redirect(authUrl);
+    res.redirect(`https://${process.env.BNET_REGION}.battle.net/oauth/authorize?${params}`);
   } catch (error) {
-    console.error("Auth URL Error:", error);
-    handleApiError(error, res, "generate authorization URL");
+    console.error('Auth URL Error:', error);
+    res.status(500).json({ error: 'Failed to generate authorization URL' });
   }
 };
 
