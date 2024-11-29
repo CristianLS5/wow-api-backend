@@ -119,6 +119,16 @@ export const handleCallback = async (
   req: CustomRequest,
   res: Response
 ): Promise<void> => {
+  console.log('Received callback from Battle.net:', {
+    query: req.query,
+    headers: {
+      origin: req.headers.origin,
+      referer: req.headers.referer,
+      host: req.headers.host
+    },
+    timestamp: new Date().toISOString()
+  });
+
   try {
     const { code, state } = req.query;
     const frontendCallback =
