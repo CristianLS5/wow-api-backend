@@ -73,14 +73,16 @@ app.use(
     secret: process.env.SESSION_SECRET!,
     resave: false,
     saveUninitialized: false,
-    name: "bnet_session",
+    name: "wcv.sid",
     store: store,
     rolling: true,
     cookie: {
       secure: process.env.NODE_ENV === "production",
       httpOnly: true,
-      sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      domain: process.env.NODE_ENV === "production" ? ".wowcharacterviewer.com" : undefined,
       path: "/",
+      maxAge: 24 * 60 * 60 * 1000
     },
   })
 );
