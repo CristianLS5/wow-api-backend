@@ -44,74 +44,44 @@ export const getAuthorizationUrl = async (
 ): Promise<void> => {
   try {
     // Validate required environment variables
-    if (!process.env.FRONTEND_URL) {
-      throw new Error('FRONTEND_URL environment variable is not set');
-    }
     if (!process.env.BNET_CALLBACK_URL) {
       throw new Error('BNET_CALLBACK_URL environment variable is not set');
     }
-    if (!process.env.BNET_CLIENT_ID) {
-      throw new Error('BNET_CLIENT_ID environment variable is not set');
-    }
 
-    const defaultCallback = `${process.env.FRONTEND_URL}/auth/callback`;
-    const frontendCallback = (req.query.callback as string) || defaultCallback;
-    const consent = req.query.consent as string;
     const state = crypto.randomBytes(16).toString("hex");
-
-    // Detailed environment logging
-    console.log('Environment Variables:', {
-      FRONTEND_URL: process.env.FRONTEND_URL,
-      BNET_CALLBACK_URL: process.env.BNET_CALLBACK_URL,
-      BNET_REGION: BattleNetAPI.region,
-      NODE_ENV: process.env.NODE_ENV
-    });
-
-    // Request details logging
-    console.log('Request Details:', {
-      headers: req.headers,
-      query: req.query,
-      session: req.session,
+    
+    // Log the exact callback URL we're using
+    console.log('Auth Configuration:', {
+      callbackUrl: process.env.BNET_CALLBACK_URL,
+      region: BattleNetAPI.region,
       timestamp: new Date().toISOString()
     });
 
     const authUrl = new URL(
       `https://${BattleNetAPI.region}.battle.net/oauth/authorize`
     );
-    authUrl.searchParams.set("client_id", process.env.BNET_CLIENT_ID);
+    
+    // Set exact parameters as required by Battle.net
+    authUrl.searchParams.set("client_id", process.env.BNET_CLIENT_ID!);
     authUrl.searchParams.set("response_type", "code");
     authUrl.searchParams.set("redirect_uri", process.env.BNET_CALLBACK_URL);
     authUrl.searchParams.set("scope", "wow.profile");
     authUrl.searchParams.set("state", state);
 
-    // Log the final URL (with masked client_id)
-    console.log('Generated Auth URL:', authUrl.toString().replace(process.env.BNET_CLIENT_ID!, 'MASKED_CLIENT_ID'));
-
+    // Store state in session
     req.session.oauthState = state;
-    req.session.consent = consent;
-    req.session.frontendCallback = frontendCallback;
+    req.session.frontendCallback = req.query.callback as string || `${process.env.FRONTEND_URL}/auth/callback`;
 
-    // Log session data
-    console.log('Session Data:', {
-      oauthState: state,
-      consent,
-      frontendCallback,
-      sessionID: req.sessionID,
+    console.log('Generated Auth URL:', {
+      url: authUrl.toString().replace(process.env.BNET_CLIENT_ID!, 'MASKED_CLIENT_ID'),
+      state: state,
       timestamp: new Date().toISOString()
     });
 
     res.redirect(authUrl.toString());
-  } catch (error: unknown) {
-    console.error('Error in getAuthorizationUrl:', {
-      error: error instanceof Error ? error.message : 'Unknown error',
-      stack: error instanceof Error ? error.stack : undefined,
-      timestamp: new Date().toISOString()
-    });
-    if (error instanceof Error) {
-      handleApiError(error, res, "generate authorization URL");
-    } else {
-      handleApiError(new Error('Unknown error'), res, "generate authorization URL");
-    }
+  } catch (error) {
+    console.error('Auth URL Generation Error:', error);
+    handleApiError(error instanceof Error ? error : new Error('Unknown error'), res, "generate authorization URL");
   }
 };
 
@@ -119,6 +89,14 @@ export const handleCallback = async (
   req: CustomRequest,
   res: Response
 ): Promise<void> => {
+  console.log('=== Callback Session Details ===', {
+    hasSession: !!req.session,
+    sessionID: req.sessionID,
+    oauthState: req.session.oauthState,
+    receivedState: req.query.state,
+    timestamp: new Date().toISOString()
+  });
+
   console.log('=== Battle.net Callback Start ===');
   console.log('Raw request:', {
     url: req.url,
