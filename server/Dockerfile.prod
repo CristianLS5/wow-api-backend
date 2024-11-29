@@ -1,0 +1,10 @@
+# Similar to your frontend setup, but for the backend:
+FROM node:20
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+COPY ./src/data/csv ./dist/data/csv
+RUN npm run build
+EXPOSE 3000
+CMD ["npm", "start"]
