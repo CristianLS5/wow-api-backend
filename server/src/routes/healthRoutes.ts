@@ -129,10 +129,9 @@ router.get("/oauth/:region", async (req, res) => {
 router.get("/oauth/token-test", async (_req, res) => {
   const region = process.env.BNET_REGION?.toLowerCase() || "eu";
   const result = await checkBattleNetTokenEndpoint(region);
-  
-  // Return the result directly without modifying the service name
   res.json(result);
 });
+
 
 router.get("/full", async (_req, res) => {
   try {
