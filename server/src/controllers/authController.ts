@@ -48,6 +48,14 @@ export const getAuthorizationUrl = async (
     const consent = req.query.consent as string;
     const state = crypto.randomBytes(16).toString("hex");
 
+    console.log('Auth Request Details:', {
+      frontendCallback,
+      consent,
+      state,
+      BNET_CALLBACK_URL: process.env.BNET_CALLBACK_URL,
+      BNET_CLIENT_ID: process.env.BNET_CLIENT_ID?.substring(0, 8) + '...',
+    });
+
     const authUrl = new URL(
       `https://${BattleNetAPI.region}.battle.net/oauth/authorize`
     );
@@ -57,13 +65,15 @@ export const getAuthorizationUrl = async (
     authUrl.searchParams.set("scope", "wow.profile");
     authUrl.searchParams.set("state", state);
 
-    // Store both state and consent in session
+    console.log('Generated Auth URL:', authUrl.toString().replace(process.env.BNET_CLIENT_ID!, 'MASKED_CLIENT_ID'));
+
     req.session.oauthState = state;
     req.session.consent = consent;
     req.session.frontendCallback = frontendCallback;
 
     res.redirect(authUrl.toString());
   } catch (error: unknown) {
+    console.error('Error in getAuthorizationUrl:', error);
     if (error instanceof Error) {
       handleApiError(error, res, "generate authorization URL");
     } else {
