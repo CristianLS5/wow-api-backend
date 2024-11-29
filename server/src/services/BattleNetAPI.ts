@@ -56,6 +56,15 @@ class BattleNetAPI {
     code: string
   ): Promise<{ token: string; refreshToken: string; expiresIn: number }> {
     const tokenUrl = `https://${this.region}.battle.net/oauth/token`;
+    
+    // Add logging for debugging
+    console.log('Getting access token with config:', {
+      region: this.region,
+      callbackUrl: process.env.BNET_CALLBACK_URL,
+      clientId: process.env.BNET_CLIENT_ID?.substring(0, 8) + '...', // Log partial client ID for security
+      environment: process.env.NODE_ENV
+    });
+
     const params = new URLSearchParams({
       grant_type: "authorization_code",
       code: code,
@@ -63,6 +72,7 @@ class BattleNetAPI {
     });
 
     try {
+      console.log('Making token request to:', tokenUrl);
       const response = await axios.post(tokenUrl, params.toString(), {
         auth: {
           username: process.env.BNET_CLIENT_ID || "",
@@ -73,13 +83,24 @@ class BattleNetAPI {
         },
       });
 
+      console.log('Token request successful');
       return {
         token: response.data.access_token,
         refreshToken: response.data.refresh_token,
         expiresIn: response.data.expires_in,
       };
     } catch (error) {
-      console.error("Error getting access token:", error);
+      // Enhanced error logging
+      if (axios.isAxiosError(error)) {
+        console.error('Token request failed:', {
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          data: error.response?.data,
+          url: error.config?.url
+        });
+      } else {
+        console.error("Error getting access token:", error);
+      }
       throw error;
     }
   }
@@ -123,14 +144,24 @@ class BattleNetAPI {
 
   async validateToken(token: string): Promise<boolean> {
     try {
+      console.log('Validating token with Battle.net');
       await axios.get(`https://${this.region}.battle.net/oauth/check_token`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
       });
+      console.log('Token validation successful');
       return true;
     } catch (error) {
-      console.error("Error validating token:", error);
+      if (axios.isAxiosError(error)) {
+        console.error('Token validation failed:', {
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          data: error.response?.data
+        });
+      } else {
+        console.error("Error validating token:", error);
+      }
       return false;
     }
   }
