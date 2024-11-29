@@ -119,18 +119,27 @@ export const handleCallback = async (
   req: CustomRequest,
   res: Response
 ): Promise<void> => {
-  console.log('Received callback from Battle.net:', {
+  console.log('=== Battle.net Callback Start ===');
+  console.log('Raw request:', {
+    url: req.url,
+    method: req.method,
     query: req.query,
-    headers: {
-      origin: req.headers.origin,
-      referer: req.headers.referer,
-      host: req.headers.host
-    },
+    headers: req.headers,
     timestamp: new Date().toISOString()
   });
 
   try {
-    const { code, state } = req.query;
+    const code = req.query.code as string | undefined;
+    const state = req.query.state as string | undefined;
+
+    console.log('OAuth Parameters:', {
+      hasCode: !!code,
+      hasState: !!state,
+      state: state,
+      sessionState: req.session.oauthState,
+      timestamp: new Date().toISOString()
+    });
+
     const frontendCallback =
       req.session.frontendCallback || "http://localhost:4200/auth/callback";
     const consent = req.session.consent === "true"; // Get consent from session
@@ -176,11 +185,12 @@ export const handleCallback = async (
 
     res.redirect(redirectUrl.toString());
   } catch (error: unknown) {
-    if (error instanceof Error) {
-      handleApiError(error, res, "handle OAuth callback");
-    } else {
-      handleApiError(new Error('Unknown error'), res, "handle OAuth callback");
-    }
+    console.error('Callback Error:', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+      timestamp: new Date().toISOString()
+    });
+    throw error;
   }
 };
 
