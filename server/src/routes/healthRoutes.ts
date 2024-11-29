@@ -130,21 +130,17 @@ router.get("/oauth/token-test", async (_req, res) => {
   const region = process.env.BNET_REGION?.toLowerCase() || "eu";
   const result = await checkBattleNetTokenEndpoint(region);
   
-  // Override the service name to be more descriptive
-  const response = {
-    ...result,
-    service: `battle.net-token-check-${region}` // Fix the service name
-  };
-  
-  res.json(response);
+  // Don't modify the service name, use the one from checkBattleNetTokenEndpoint
+  res.json(result);
 });
 
 router.get("/full", async (_req, res) => {
   try {
-    const regions = ["eu", "us", "kr", "tw"];
-    const results = await Promise.all([
-      ...regions.map((region) => checkBattleNetTokenEndpoint(region)),
-    ]);
+    // Only check regions we actually use
+    const regions = ["eu", "us"];
+    const results = await Promise.all(
+      regions.map((region) => checkBattleNetTokenEndpoint(region))
+    );
 
     const allUp = results.every((result) => result.status === "up");
 
