@@ -50,6 +50,29 @@ async function checkBattleNetTokenEndpoint(
   }
 }
 
+// Basic health check
+router.get("/", (_req, res) => {
+  res.json({
+    status: "healthy",
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV
+  });
+});
+
+// Region-specific checks
+router.get("/oauth/:region", async (req, res) => {
+  const region = req.params.region.toLowerCase();
+  const result = await checkBattleNetTokenEndpoint(region);
+  res.json(result);
+});
+
+// Token endpoint test
+router.get("/oauth/token-test", async (_req, res) => {
+  const region = process.env.BNET_REGION?.toLowerCase() || 'eu';
+  const result = await checkBattleNetTokenEndpoint(region);
+  res.json(result);
+});
+
 router.get("/full", async (_req, res) => {
   try {
     const regions = ["eu", "us", "kr", "tw"];
