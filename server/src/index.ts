@@ -46,46 +46,45 @@ const app = express();
 const port = process.env.PORT || 3000;
 const mongoUri = process.env.MONGODB_URI!;
 
-// CORS configuration
-const corsOptions = {
-  origin: process.env.FRONTEND_URL || "http://localhost:4200",
-  optionsSuccessStatus: 200,
-  credentials: true,
-  methods: ["GET", "POST", "OPTIONS"],
-  allowedHeaders: [
-    "Content-Type",
-    "Authorization",
-    "Cookie",
-    "X-Session-ID",
-    "X-Storage-Type",
-  ],
-  exposedHeaders: ["X-Session-ID"],
-};
+// Add this before session middleware
+app.enable('trust proxy');
 
-app.use(cors(corsOptions));
-app.use(express.json());
-
+// Initialize store first
 const store = initializeStore(mongoUri);
 
-// The rest of your session configuration remains the same
+// Then use it in session configuration
 app.use(
   session({
     secret: process.env.SESSION_SECRET!,
-    resave: false,
-    saveUninitialized: false,
+    resave: true,
+    saveUninitialized: true,
     name: "wcv.sid",
     store: store,
-    rolling: true,
+    proxy: true,
     cookie: {
-      secure: process.env.NODE_ENV === "production",
+      secure: true,
       httpOnly: true,
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-      domain: process.env.NODE_ENV === "production" ? ".wowcharacterviewer.com" : undefined,
-      path: "/",
+      sameSite: 'none',
+      domain: '.wowcharacterviewer.com',
+      path: '/',
       maxAge: 24 * 60 * 60 * 1000
-    },
+    }
   })
 );
+
+// CORS and other middleware after session
+app.use(cors({
+  origin: [
+    'https://wowcharacterviewer.com',
+    'https://api.wowcharacterviewer.com',
+    'https://www.wowcharacterviewer.com'
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie']
+}));
+
+app.use(express.json());
 
 // Routes
 app.use("/auth", authRoutes);
@@ -105,6 +104,17 @@ app.use("/api/dungeons", dungeonsRoutes);
 app.use("/api/affixes", affixesRoutes);
 app.use("/api/raids", raidsRoutes);
 app.use('/health', healthRoutes);
+
+// Add after session middleware
+app.use((req: Request, _res: Response, next: NextFunction) => {
+  console.log('Session Debug:', {
+    url: req.url,
+    sessionID: req.sessionID,
+    hasSession: !!req.session,
+    cookies: req.headers.cookie
+  });
+  next();
+});
 
 // Error handling middleware
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {

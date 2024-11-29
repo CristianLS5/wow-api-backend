@@ -46,13 +46,9 @@ export const getAuthorizationUrl = async (
   try {
     const state = crypto.randomBytes(16).toString('hex');
     
-    console.log('Pre-auth Session State:', {
-      sessionID: req.sessionID,
-      cookie: req.session.cookie
-    });
-
     // Set the state in session
     req.session.oauthState = state;
+    req.session.cookie.sameSite = 'none';
     
     // Force session save and wait for completion
     await new Promise<void>((resolve, reject) => {
@@ -65,7 +61,8 @@ export const getAuthorizationUrl = async (
         console.log('Session saved:', {
           sessionID: req.sessionID,
           state: state,
-          oauthState: req.session.oauthState
+          oauthState: req.session.oauthState,
+          cookie: req.session.cookie
         });
         resolve();
       });
@@ -79,10 +76,10 @@ export const getAuthorizationUrl = async (
       redirect_uri: process.env.BNET_CALLBACK_URL!
     });
 
-    console.log('Redirecting to Battle.net:', {
-      sessionID: req.sessionID,
-      state: state
-    });
+    // Set cookie headers explicitly
+    res.setHeader('Set-Cookie', [
+      `wcv.sid=${req.sessionID}; Path=/; Domain=.wowcharacterviewer.com; Secure; HttpOnly; SameSite=None`
+    ]);
 
     res.redirect(`https://${process.env.BNET_REGION}.battle.net/oauth/authorize?${params}`);
   } catch (error) {
