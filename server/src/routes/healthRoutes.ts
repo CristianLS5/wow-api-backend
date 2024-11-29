@@ -130,7 +130,7 @@ router.get("/oauth/token-test", async (_req, res) => {
   const region = process.env.BNET_REGION?.toLowerCase() || "eu";
   const result = await checkBattleNetTokenEndpoint(region);
   
-  // Don't modify the service name, use the one from checkBattleNetTokenEndpoint
+  // Return the result directly without modifying the service name
   res.json(result);
 });
 
@@ -161,6 +161,8 @@ router.get("/full", async (_req, res) => {
 router.get("/oauth/callback-test", async (_req, res) => {
   const region = process.env.BNET_REGION?.toLowerCase() || 'eu';
   const result = await checkCallbackEndpoint(region);
+  
+  // Return the result directly without modifying the service name
   res.json(result);
 });
 
