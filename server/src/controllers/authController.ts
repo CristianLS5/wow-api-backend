@@ -487,3 +487,53 @@ export const authorize = async (
     res.status(500).json({ error: "Internal server error" });
   }
 };
+
+export const handleOAuthExchange = async (
+  req: CustomRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { code, state } = req.body;
+
+    console.log("OAuth Exchange received:", {
+      hasCode: !!code,
+      hasState: !!state,
+      sessionState: req.session.oauthState,
+      sessionId: req.sessionID,
+    });
+
+    // Verify state parameter
+    if (!state || !req.session.oauthState || state !== req.session.oauthState) {
+      res.status(400).json({ 
+        error: "invalid_state",
+        isAuthenticated: false 
+      });
+      return;
+    }
+
+    // Clear state after verification
+    delete req.session.oauthState;
+
+    // Exchange code for tokens
+    const { token, refreshToken } = await BattleNetAPI.getAccessToken(code);
+    
+    // Store in session
+    req.session.accessToken = token;
+    req.session.refreshToken = refreshToken;
+    
+    await new Promise<void>((resolve, reject) => {
+      req.session.save((err) => err ? reject(err) : resolve());
+    });
+
+    res.json({
+      isAuthenticated: true,
+      isPersistent: !!req.session.isPersistent
+    });
+  } catch (error) {
+    console.error("OAuth Exchange Error:", error);
+    res.status(500).json({ 
+      error: "server_error",
+      isAuthenticated: false 
+    });
+  }
+};
