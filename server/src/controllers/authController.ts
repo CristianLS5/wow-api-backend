@@ -110,57 +110,40 @@ export const handleCallback = async (
         receivedState: req.query.state,
         sessionState: req.session.oauthState,
       });
-      res.status(403).json({ error: "Invalid state parameter" });
+      // Let frontend handle the error
+      res.redirect(`${process.env.FRONTEND_URL}/auth/callback?error=invalid_state`);
       return;
     }
 
     // 2. Clear state after verification
-
     delete req.session.oauthState;
 
-    // Handle test requests
-    if (req.query.test === "true") {
-      res.status(401).json({
-        error: "Unauthorized",
-        message: "OAuth parameters required",
-      });
-      return;
-    }
-
-    // Rest of your callback logic...
+    // 3. Handle the OAuth code
     const code = req.query.code as string;
     if (!code) {
-      res.status(400).json({ error: "Missing authorization code" });
+      res.redirect(`${process.env.FRONTEND_URL}/auth/callback?error=missing_code`);
       return;
     }
 
-    const { token, refreshToken } = await BattleNetAPI.getAccessToken(code);
-
-    // Update session
-    req.session.accessToken = token;
-    if (req.session.isPersistent) {
+    try {
+      const { token, refreshToken } = await BattleNetAPI.getAccessToken(code);
+      
+      // Store tokens and save session
+      req.session.accessToken = token;
       req.session.refreshToken = refreshToken;
-    }
-
-    // Save session before redirect
-    await new Promise<void>((resolve, reject) => {
-      req.session.save((err) => {
-        if (err) reject(err);
-        resolve();
+      await new Promise<void>((resolve, reject) => {
+        req.session.save((err) => err ? reject(err) : resolve());
       });
-    });
 
-    // Redirect to frontend
-    const redirectUrl = new URL(process.env.FRONTEND_URL + "/auth/callback");
-    redirectUrl.searchParams.set("success", "true");
-    res.redirect(redirectUrl.toString());
+      // Redirect with success
+      res.redirect(`${process.env.FRONTEND_URL}/auth/callback?code=${code}&state=${req.query.state}`);
+    } catch (error) {
+      console.error('Token exchange error:', error);
+      res.redirect(`${process.env.FRONTEND_URL}/auth/callback?error=token_exchange_failed`);
+    }
   } catch (error) {
     console.error("Callback Error:", error);
-    // Send JSON response instead of throwing
-    res.status(500).json({
-      error: "Internal server error",
-      message: error instanceof Error ? error.message : "Unknown error",
-    });
+    res.redirect(`${process.env.FRONTEND_URL}/auth/callback?error=server_error`);
   }
 };
 
