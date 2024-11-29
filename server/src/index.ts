@@ -125,9 +125,22 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   });
 });
 
-// MongoDB connection
+// MongoDB DEV connection
+// mongoose
+//   .connect(mongoUri)
+//   .then(() => console.log("Connected to MongoDB"))
+//   .catch((err) => {
+//     console.error("MongoDB connection error:", err);
+//     process.exit(1); // Exit if MongoDB connection fails
+//   });
+
+// MongoDB PRD connection
 mongoose
-  .connect(mongoUri)
+  .connect(mongoUri, {
+    ssl: true,
+    tls: true,
+    tlsAllowInvalidCertificates: true,
+  } as mongoose.ConnectOptions)
   .then(() => console.log("Connected to MongoDB"))
   .catch((err) => {
     console.error("MongoDB connection error:", err);
