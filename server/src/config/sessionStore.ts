@@ -12,7 +12,6 @@ export const initializeStore = (mongoUri: string): Store => {
     mongoOptions: {
       ssl: true,
       tls: true,
-      tlsInsecure: true,
       tlsAllowInvalidCertificates: true,
       retryWrites: true,
       minPoolSize: 0,
