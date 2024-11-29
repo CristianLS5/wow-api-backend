@@ -45,23 +45,25 @@ export const getAuthorizationUrl = async (
 ): Promise<void> => {
   try {
     const state = crypto.randomBytes(16).toString("hex");
+    const region = process.env.BNET_REGION?.toLowerCase() || 'eu';
     
     const params = new URLSearchParams({
       response_type: "code",
       client_id: process.env.BNET_CLIENT_ID!,
-      scope: "wow.profile",  // Required scope
+      scope: "wow.profile",
       state: state,
       redirect_uri: process.env.BNET_CALLBACK_URL!
     });
 
-    // Use us.battle.net instead of oauth.battle.net
-    const authUrl = `https://us.battle.net/oauth/authorize?${params.toString()}`;
+    // Use region-specific endpoint
+    const authUrl = `https://${region}.battle.net/oauth/authorize?${params.toString()}`;
 
     console.log('OAuth Request:', {
       clientId: process.env.BNET_CLIENT_ID!.substring(0, 5) + '...',
       redirectUri: process.env.BNET_CALLBACK_URL,
       scope: 'wow.profile',
       state,
+      region,
       timestamp: new Date().toISOString()
     });
 
