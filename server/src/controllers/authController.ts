@@ -43,16 +43,24 @@ export const getAuthorizationUrl = async (
   _next: NextFunction
 ): Promise<void> => {
   try {
-    const frontendCallback =
-      (req.query.callback as string) || "http://localhost:4200/auth/callback";
+    // Use FRONTEND_URL environment variable
+    const defaultCallback = `${process.env.FRONTEND_URL}/auth/callback`;
+
+    // This is where the user will ultimately end up (frontend)
+    const frontendCallback = (req.query.callback as string) || defaultCallback;
+    
     const consent = req.query.consent as string;
     const state = crypto.randomBytes(16).toString("hex");
 
+    if (!process.env.BNET_CALLBACK_URL) {
+      throw new Error('BNET_CALLBACK_URL environment variable is not set');
+    }
+
     console.log('Auth Request Details:', {
       frontendCallback,
+      bnetCallback: process.env.BNET_CALLBACK_URL,
       consent,
       state,
-      BNET_CALLBACK_URL: process.env.BNET_CALLBACK_URL,
       BNET_CLIENT_ID: process.env.BNET_CLIENT_ID?.substring(0, 8) + '...',
     });
 
@@ -61,11 +69,9 @@ export const getAuthorizationUrl = async (
     );
     authUrl.searchParams.set("client_id", process.env.BNET_CLIENT_ID!);
     authUrl.searchParams.set("response_type", "code");
-    authUrl.searchParams.set("redirect_uri", process.env.BNET_CALLBACK_URL!);
+    authUrl.searchParams.set("redirect_uri", process.env.BNET_CALLBACK_URL);
     authUrl.searchParams.set("scope", "wow.profile");
     authUrl.searchParams.set("state", state);
-
-    console.log('Generated Auth URL:', authUrl.toString().replace(process.env.BNET_CLIENT_ID!, 'MASKED_CLIENT_ID'));
 
     req.session.oauthState = state;
     req.session.consent = consent;
