@@ -9,6 +9,10 @@ interface HealthCheckResult {
   latency: number;
   timestamp: string;
   error?: string;
+  details?: {
+    callbackUrl: string;
+    redirectLocation?: string;
+  };
 }
 
 async function checkBattleNetTokenEndpoint(
@@ -50,6 +54,61 @@ async function checkBattleNetTokenEndpoint(
   }
 }
 
+async function checkCallbackEndpoint(region: string): Promise<HealthCheckResult> {
+  const startTime = Date.now();
+  try {
+    const callbackUrl = process.env.BNET_CALLBACK_URL;
+    
+    // Test 1: Verify callback URL is configured
+    if (!callbackUrl) {
+      throw new Error('Callback URL not configured');
+    }
+
+    // Test 2: Check if the callback URL is properly formatted
+    try {
+      new URL(callbackUrl);
+    } catch (e) {
+      throw new Error('Invalid callback URL format');
+    }
+
+    // Test 3: Verify OAuth configuration
+    const params = new URLSearchParams({
+      response_type: 'code',
+      client_id: process.env.BNET_CLIENT_ID!,
+      scope: 'wow.profile',
+      state: 'health-check',
+      redirect_uri: callbackUrl
+    });
+
+    const authUrl = `https://${region}.battle.net/oauth/authorize?${params}`;
+    
+    // We expect a 302 redirect for a properly configured OAuth
+    const response = await axios.get(authUrl, {
+      maxRedirects: 0,
+      validateStatus: (status) => status === 302
+    });
+
+    return {
+      status: "up",
+      service: `oauth-callback-${region}`,
+      latency: Date.now() - startTime,
+      timestamp: new Date().toISOString(),
+      details: {
+        callbackUrl,
+        redirectLocation: response.headers.location
+      }
+    };
+  } catch (error) {
+    return {
+      status: "down",
+      service: `oauth-callback-${region}`,
+      latency: Date.now() - startTime,
+      timestamp: new Date().toISOString(),
+      error: error instanceof Error ? error.message : "Unknown error"
+    };
+  }
+}
+
 // Basic health check
 router.get("/", (_req, res) => {
   res.json({
@@ -69,9 +128,15 @@ router.get("/oauth/:region", async (req, res) => {
 // Token endpoint test
 router.get("/oauth/token-test", async (_req, res) => {
   const region = process.env.BNET_REGION?.toLowerCase() || "eu";
-  // Remove the -token-test from the service name
   const result = await checkBattleNetTokenEndpoint(region);
-  res.json(result);
+  
+  // Override the service name to be more descriptive
+  const response = {
+    ...result,
+    service: `battle.net-token-check-${region}` // Fix the service name
+  };
+  
+  res.json(response);
 });
 
 router.get("/full", async (_req, res) => {
@@ -99,8 +164,7 @@ router.get("/full", async (_req, res) => {
 
 router.get("/oauth/callback-test", async (_req, res) => {
   const region = process.env.BNET_REGION?.toLowerCase() || 'eu';
-  // Remove the -callback-test from the service name
-  const result = await checkBattleNetTokenEndpoint(region);
+  const result = await checkCallbackEndpoint(region);
   res.json(result);
 });
 
