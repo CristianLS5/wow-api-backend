@@ -47,12 +47,12 @@ export const getAuthorizationUrl = async (
     
     const authUrl = new URL("https://oauth.battle.net/authorize");
     
-    // Add query parameters in the exact order as per Battle.net docs
-    authUrl.searchParams.append("response_type", "code");
-    authUrl.searchParams.append("client_id", process.env.BNET_CLIENT_ID!);
-    authUrl.searchParams.append("scope", "wow.profile");
-    authUrl.searchParams.append("state", state);
-    authUrl.searchParams.append("redirect_uri", process.env.BNET_CALLBACK_URL!);
+    // Parameters MUST be in this exact order
+    authUrl.searchParams.append("response_type", "code");  // 1st
+    authUrl.searchParams.append("client_id", process.env.BNET_CLIENT_ID!);  // 2nd
+    authUrl.searchParams.append("scope", "wow.profile");  // 3rd
+    authUrl.searchParams.append("state", state);  // 4th
+    authUrl.searchParams.append("redirect_uri", process.env.BNET_CALLBACK_URL!);  // 5th
 
     console.log('Battle.net OAuth Request:', {
       clientId: process.env.BNET_CLIENT_ID!.substring(0, 5) + '...',
