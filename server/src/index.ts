@@ -19,7 +19,7 @@ import reputationsRoutes from "./routes/reputationsRoutes";
 import dungeonsRoutes from "./routes/dungeonsRoutes";
 import affixesRoutes from "./routes/affixesRoutes";
 import raidsRoutes from "./routes/raidsRoutes";
-import MongoStore from "connect-mongo";
+import { initializeStore } from './config/sessionStore';
 
 // Load environment variables first
 dotenv.config();
@@ -64,12 +64,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
-const store = MongoStore.create({
-  mongoUrl: mongoUri,
-  ttl: 30 * 24 * 60 * 60, // 30 days in seconds
-  collectionName: "sessions",
-  dbName: "wow_character_viewer",
-});
+const store = initializeStore(mongoUri);
 
 // The rest of your session configuration remains the same
 app.use(

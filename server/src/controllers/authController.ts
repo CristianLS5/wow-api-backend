@@ -3,8 +3,8 @@ import BattleNetAPI from "../services/BattleNetAPI";
 import { handleApiError } from "../utils/errorHandler";
 import crypto from "crypto";
 import { Session, SessionData } from "express-session";
-import store from "../config/sessionStore";
 import { Cookie } from "express-session";
+import { getStore } from '../config/sessionStore';
 
 // Define custom session data
 interface CustomSessionData {
@@ -63,8 +63,12 @@ export const getAuthorizationUrl = async (
     req.session.frontendCallback = frontendCallback;
 
     res.redirect(authUrl.toString());
-  } catch (error) {
-    handleApiError(error, res, "generate authorization URL");
+  } catch (error: unknown) {
+    if (error instanceof Error) {
+      handleApiError(error, res, "generate authorization URL");
+    } else {
+      handleApiError(new Error('Unknown error'), res, "generate authorization URL");
+    }
   }
 };
 
@@ -118,8 +122,12 @@ export const handleCallback = async (
     redirectUrl.searchParams.set("sid", sessionID);
 
     res.redirect(redirectUrl.toString());
-  } catch (error) {
-    handleApiError(error, res, "handle OAuth callback");
+  } catch (error: unknown) {
+    if (error instanceof Error) {
+      handleApiError(error, res, "handle OAuth callback");
+    } else {
+      handleApiError(new Error('Unknown error'), res, "handle OAuth callback");
+    }
   }
 };
 
@@ -128,6 +136,7 @@ export const validateToken = async (
   res: Response
 ): Promise<void> => {
   try {
+    const store = getStore();
     const sessionId = req.headers["x-session-id"] as string;
     const storageType = req.headers["x-storage-type"] as string; // 'session' or 'local'
 
@@ -201,10 +210,15 @@ export const validateToken = async (
         error: "Invalid token",
       });
     }
-  } catch (error) {
-    handleApiError(error, res, "validate token");
+  } catch (error: unknown) {
+    if (error instanceof Error) {
+      handleApiError(error, res, "validate token");
+    } else {
+      handleApiError(new Error('Unknown error'), res, "validate token");
+    }
   }
 };
+
 export const logout = (req: CustomRequest, res: Response): Promise<void> => {
   return new Promise((resolve) => {
     req.session.destroy((err) => {
@@ -265,11 +279,14 @@ export const exchangeToken = async (
       isAuthenticated: true,
       isPersistent: persistentSession,
     });
-  } catch (error) {
-    handleApiError(error, res, "exchange token");
+  } catch (error: unknown) {
+    if (error instanceof Error) {
+      handleApiError(error, res, "exchange token");
+    } else {
+      handleApiError(new Error('Unknown error'), res, "exchange token");
+    }
   }
 };
-
 
 export const refreshToken = async (
   req: CustomRequest,
@@ -307,8 +324,12 @@ export const refreshToken = async (
       token,
       expiresIn,
     });
-  } catch (error) {
-    handleApiError(error, res, "refresh token");
+  } catch (error: unknown) {
+    if (error instanceof Error) {
+      handleApiError(error, res, "refresh token");
+    } else {
+      handleApiError(new Error('Unknown error'), res, "refresh token");
+    }
   }
 };
 
@@ -339,8 +360,12 @@ export const updateConsent = async (
     }
 
     res.json({ success: true });
-  } catch (error) {
-    handleApiError(error, res, "update consent");
+  } catch (error: unknown) {
+    if (error instanceof Error) {
+      handleApiError(error, res, "update consent");
+    } else {
+      handleApiError(new Error('Unknown error'), res, "update consent");
+    }
   }
 };
 
@@ -353,6 +378,7 @@ export const validateSession = async (
 
     // Validate the session exists with proper typing
     const session = await new Promise<StoredSession | null>((resolve, reject) => {
+      const store = getStore();
       store.get(sid, (error, session) => {
         if (error) reject(error);
         resolve(session as StoredSession | null);
@@ -387,6 +413,7 @@ export const validateSession = async (
 
     // Save the updated session
     await new Promise<void>((resolve, reject) => {
+      const store = getStore();
       store.set(sid, session, (error) => {
         if (error) reject(error);
         resolve();
@@ -397,7 +424,11 @@ export const validateSession = async (
       isAuthenticated: true,
       isPersistent: !!session.isPersistent,
     });
-  } catch (error) {
-    handleApiError(error, res, "validate session");
+  } catch (error: unknown) {
+    if (error instanceof Error) {
+      handleApiError(error, res, "validate session");
+    } else {
+      handleApiError(new Error('Unknown error'), res, "validate session");
+    }
   }
 };

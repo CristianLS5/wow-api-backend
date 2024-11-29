@@ -1,17 +1,21 @@
-import session from "express-session";
-import MongoDBStore from "connect-mongodb-session";
+import MongoStore from "connect-mongo";
+import { Store } from "express-session";
 
-const MongoDBStoreSession = MongoDBStore(session);
+let store: Store;
 
-const store = new MongoDBStoreSession({
-  uri: process.env.MONGODB_URI!,
-  collection: "sessions",
-  expires: 30 * 24 * 60 * 60 * 1000, // 30 days in milliseconds
-  databaseName: "wow_character_viewer",
-});
+export const initializeStore = (mongoUri: string): Store => {
+  store = MongoStore.create({
+    mongoUrl: mongoUri,
+    ttl: 30 * 24 * 60 * 60, // 30 days in seconds
+    collectionName: "sessions",
+    dbName: "wow_character_viewer",
+  });
+  return store;
+};
 
-store.on("error", function (error: Error) {
-  console.error("Session store error:", error);
-});
-
-export default store;
+export const getStore = (): Store => {
+  if (!store) {
+    throw new Error("Store not initialized");
+  }
+  return store;
+};
