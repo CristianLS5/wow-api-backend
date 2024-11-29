@@ -45,31 +45,37 @@ export const getAuthorizationUrl = async (
   try {
     const state = crypto.randomBytes(16).toString("hex");
     
-    // Use the correct OAuth endpoint as per documentation
     const authUrl = new URL("https://oauth.battle.net/authorize");
     
-    authUrl.searchParams.set("client_id", process.env.BNET_CLIENT_ID!);
-    authUrl.searchParams.set("scope", "wow.profile");
-    authUrl.searchParams.set("state", state);
-    authUrl.searchParams.set("redirect_uri", process.env.BNET_CALLBACK_URL!);
-    authUrl.searchParams.set("response_type", "code");
+    // Add query parameters in the exact order as per Battle.net docs
+    authUrl.searchParams.append("response_type", "code");
+    authUrl.searchParams.append("client_id", process.env.BNET_CLIENT_ID!);
+    authUrl.searchParams.append("scope", "wow.profile");
+    authUrl.searchParams.append("state", state);
+    authUrl.searchParams.append("redirect_uri", process.env.BNET_CALLBACK_URL!);
 
-    // Log the exact URL we're generating
-    console.log('OAuth Request:', {
-      url: authUrl.toString().replace(process.env.BNET_CLIENT_ID!, 'MASKED_CLIENT_ID'),
+    console.log('Battle.net OAuth Request:', {
+      clientId: process.env.BNET_CLIENT_ID!.substring(0, 5) + '...',
       redirectUri: process.env.BNET_CALLBACK_URL,
+      state,
       scope: 'wow.profile',
+      fullUrl: authUrl.toString().replace(process.env.BNET_CLIENT_ID!, 'MASKED_CLIENT_ID'),
       timestamp: new Date().toISOString()
     });
 
-    // Store state for verification
+    // Store state in session
     req.session.oauthState = state;
-    req.session.frontendCallback = req.query.callback as string || `${process.env.FRONTEND_URL}/auth/callback`;
+    req.session.frontendCallback = req.query.callback as string || 
+      `${process.env.FRONTEND_URL}/auth/callback`;
 
     res.redirect(authUrl.toString());
   } catch (error) {
     console.error('Auth URL Generation Error:', error);
-    handleApiError(error instanceof Error ? error : new Error('Unknown error'), res, "generate authorization URL");
+    handleApiError(
+      error instanceof Error ? error : new Error('Unknown error'), 
+      res, 
+      "generate Battle.net authorization URL"
+    );
   }
 };
 
@@ -77,24 +83,42 @@ export const handleCallback = async (
   req: CustomRequest,
   res: Response
 ): Promise<void> => {
-  console.log('=== Callback Session Details ===', {
-    hasSession: !!req.session,
-    sessionID: req.sessionID,
-    oauthState: req.session.oauthState,
-    receivedState: req.query.state,
-    timestamp: new Date().toISOString()
-  });
-
-  console.log('=== Battle.net Callback Start ===');
-  console.log('Raw request:', {
-    url: req.url,
-    method: req.method,
-    query: req.query,
-    headers: req.headers,
-    timestamp: new Date().toISOString()
-  });
-
   try {
+    console.log('OAuth Callback Received:', {
+      code: req.query.code ? 'present' : 'missing',
+      state: req.query.state,
+      error: req.query.error,
+      error_description: req.query.error_description,
+      storedState: req.session.oauthState,
+      timestamp: new Date().toISOString()
+    });
+
+    if (req.query.error) {
+      console.error('Battle.net OAuth Error:', {
+        error: req.query.error,
+        description: req.query.error_description,
+        timestamp: new Date().toISOString()
+      });
+      return res.redirect(`${process.env.FRONTEND_URL}/auth/error?error=${req.query.error}`);
+    }
+
+    console.log('=== Callback Session Details ===', {
+      hasSession: !!req.session,
+      sessionID: req.sessionID,
+      oauthState: req.session.oauthState,
+      receivedState: req.query.state,
+      timestamp: new Date().toISOString()
+    });
+
+    console.log('=== Battle.net Callback Start ===');
+    console.log('Raw request:', {
+      url: req.url,
+      method: req.method,
+      query: req.query,
+      headers: req.headers,
+      timestamp: new Date().toISOString()
+    });
+
     const code = req.query.code as string | undefined;
     const state = req.query.state as string | undefined;
 
@@ -150,13 +174,9 @@ export const handleCallback = async (
     redirectUrl.searchParams.set("sid", sessionID);
 
     res.redirect(redirectUrl.toString());
-  } catch (error: unknown) {
-    console.error('Callback Error:', {
-      error: error instanceof Error ? error.message : 'Unknown error',
-      stack: error instanceof Error ? error.stack : undefined,
-      timestamp: new Date().toISOString()
-    });
-    throw error;
+  } catch (error) {
+    console.error('Callback Handler Error:', error);
+    handleApiError(error instanceof Error ? error : new Error('Unknown error'), res, "handle OAuth callback");
   }
 };
 
