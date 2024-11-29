@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from "express";
+import { Request, Response } from "express";
 import BattleNetAPI from "../services/BattleNetAPI";
 import { handleApiError } from "../utils/errorHandler";
 import crypto from "crypto";
@@ -39,43 +39,39 @@ interface StoredSession extends SessionData {
 
 export const getAuthorizationUrl = async (
   req: CustomRequest,
-  res: Response,
-  _next: NextFunction
+  res: Response
 ): Promise<void> => {
   try {
     const state = crypto.randomBytes(16).toString("hex");
     
-    const authUrl = new URL("https://oauth.battle.net/authorize");
-    
-    // Parameters MUST be in this exact order
-    authUrl.searchParams.append("response_type", "code");  // 1st
-    authUrl.searchParams.append("client_id", process.env.BNET_CLIENT_ID!);  // 2nd
-    authUrl.searchParams.append("scope", "wow.profile");  // 3rd
-    authUrl.searchParams.append("state", state);  // 4th
-    authUrl.searchParams.append("redirect_uri", process.env.BNET_CALLBACK_URL!);  // 5th
+    // Create URL with all required parameters
+    const params = new URLSearchParams({
+      response_type: "code",
+      client_id: process.env.BNET_CLIENT_ID!,
+      scope: "wow.profile",
+      state: state,
+      redirect_uri: process.env.BNET_CALLBACK_URL!
+    });
 
-    console.log('Battle.net OAuth Request:', {
+    // Remove any additional parameters that might be getting added
+    const authUrl = `https://oauth.battle.net/authorize?${params.toString()}`;
+
+    console.log('OAuth Request:', {
       clientId: process.env.BNET_CLIENT_ID!.substring(0, 5) + '...',
       redirectUri: process.env.BNET_CALLBACK_URL,
       state,
-      scope: 'wow.profile',
-      fullUrl: authUrl.toString().replace(process.env.BNET_CLIENT_ID!, 'MASKED_CLIENT_ID'),
+      fullUrl: authUrl.replace(process.env.BNET_CLIENT_ID!, 'MASKED_CLIENT_ID'),
       timestamp: new Date().toISOString()
     });
 
-    // Store state in session
+    // Store state in session before redirect
     req.session.oauthState = state;
-    req.session.frontendCallback = req.query.callback as string || 
-      `${process.env.FRONTEND_URL}/auth/callback`;
+    await req.session.save();  // Ensure session is saved
 
-    res.redirect(authUrl.toString());
+    res.redirect(authUrl);
   } catch (error) {
     console.error('Auth URL Generation Error:', error);
-    handleApiError(
-      error instanceof Error ? error : new Error('Unknown error'), 
-      res, 
-      "generate Battle.net authorization URL"
-    );
+    handleApiError(error, res, "generate authorization URL");
   }
 };
 
