@@ -1,5 +1,5 @@
 # Build stage
-FROM node:18 AS build
+FROM node:20 AS build
 WORKDIR /app
 
 # Install dependencies
@@ -17,7 +17,7 @@ RUN npm run build
 COPY ./src/data/csv ./dist/data/csv
 
 # Production stage
-FROM node:20-slim
+FROM node:18-slim
 WORKDIR /app
 
 # Copy only necessary files from build stage
