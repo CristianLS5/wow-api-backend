@@ -50,25 +50,23 @@ export const getAuthorizationUrl = async (
 
     const state = crypto.randomBytes(16).toString("hex");
     
-    // Normalize region to lowercase for URL construction
-    const region = process.env.BNET_REGION.toLowerCase();
+    // Use the global oauth.battle.net endpoint
+    const params = new URLSearchParams();
     
-    const params = new URLSearchParams({
-      response_type: "code",
-      client_id: process.env.BNET_CLIENT_ID,
-      scope: "wow.profile",
-      state: state,
-      redirect_uri: process.env.BNET_CALLBACK_URL
-    });
+    // Add parameters in this specific order
+    params.append("response_type", "code");
+    params.append("client_id", process.env.BNET_CLIENT_ID);
+    params.append("scope", "wow.profile");
+    params.append("state", state);
+    params.append("redirect_uri", process.env.BNET_CALLBACK_URL);
 
-    // Use the regional endpoint
-    const authUrl = `https://${region}.battle.net/oauth/authorize?${params.toString()}`;
+    // Use the global OAuth endpoint
+    const authUrl = `https://oauth.battle.net/oauth/authorize?${params.toString()}`;
 
     console.log('OAuth Request:', {
       clientId: process.env.BNET_CLIENT_ID.substring(0, 5) + '...',
       redirectUri: process.env.BNET_CALLBACK_URL,
       region: process.env.BNET_REGION,
-      normalizedRegion: region,
       state,
       fullUrl: authUrl.replace(process.env.BNET_CLIENT_ID, 'MASKED_CLIENT_ID'),
       timestamp: new Date().toISOString()
