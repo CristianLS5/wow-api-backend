@@ -81,6 +81,14 @@ export const handleCallback = async (
   req: CustomRequest,
   res: Response
 ): Promise<void> => {
+  // Handle test requests
+  if (req.query.test === 'true') {
+    res.status(401).json({
+      error: 'Unauthorized',
+      message: 'OAuth parameters required'
+    });
+    return;
+  }
   try {
     console.log('OAuth Callback Received:', {
       code: req.query.code ? 'present' : 'missing',

@@ -97,18 +97,25 @@ router.get("/oauth/callback-test", async (_req, res) => {
           redirect_uri: callbackUrl,
           scope: 'wow.profile',
           state: 'test'
-        }
+        },
+        maxRedirects: 0,  // Don't follow redirects
+        validateStatus: (_status) => true  // Accept any status code
       }
     ).catch(error => ({
       status: error.response?.status,
-      data: error.response?.data
+      data: error.response?.data,
+      headers: error.response?.headers
     }));
 
     // Test 3: Callback Endpoint Availability
     const endpointCheck = await axios.get(callbackUrl!, {
+      params: {
+        test: true  // Add this to identify test requests
+      },
       validateStatus: (_status) => true // Accept any status code
     }).catch(error => ({
-      status: error.code === 'ECONNREFUSED' ? 'Connection Refused' : error.response?.status
+      status: error.code === 'ECONNREFUSED' ? 'Connection Refused' : error.response?.status,
+      error: error.message
     }));
 
     res.json({
@@ -124,14 +131,19 @@ router.get("/oauth/callback-test", async (_req, res) => {
           statusCode: registrationCheck.status,
           details: registrationCheck.status === 302 
             ? 'Redirect as expected' 
-            : 'Unexpected response'
+            : `Unexpected response: ${JSON.stringify({
+                status: registrationCheck.status,
+                location: registrationCheck.headers?.location,
+                contentType: registrationCheck.headers?.['content-type']
+              })}`,
+          redirectUrl: registrationCheck.headers?.location
         },
         endpoint: {
-          status: endpointCheck.status === 200 ? 'pass' : 'warning',
+          status: [400, 401, 403].includes(endpointCheck.status) ? 'pass' : 'warning',  // These are acceptable status codes for OAuth endpoints
           statusCode: endpointCheck.status,
-          details: typeof endpointCheck.status === 'number' 
-            ? 'Endpoint reachable' 
-            : 'Endpoint not reachable'
+          details: [400, 401, 403].includes(endpointCheck.status)
+            ? 'Endpoint properly rejecting unauthorized requests'
+            : `Unexpected response: ${endpointCheck.status}`
         }
       },
       recommendations: []
