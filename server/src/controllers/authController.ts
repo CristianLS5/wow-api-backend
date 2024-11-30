@@ -55,6 +55,7 @@ export const getAuthorizationUrl = async (
       state,
       BNET_CALLBACK_URL: process.env.BNET_CALLBACK_URL,
       BNET_CLIENT_ID: process.env.BNET_CLIENT_ID?.substring(0, 8) + '...',
+      sessionID: req.sessionID
     });
 
     const authUrl = new URL(
@@ -66,12 +67,29 @@ export const getAuthorizationUrl = async (
     authUrl.searchParams.set("scope", "wow.profile");
     authUrl.searchParams.set("state", state);
 
-    console.log('Generated Auth URL:', authUrl.toString().replace(process.env.BNET_CLIENT_ID!, 'MASKED_CLIENT_ID'));
-
+    // Ensure session is created and saved before redirect
     req.session.oauthState = state;
     req.session.consent = consent === 'true';
     req.session.frontendCallback = frontendCallback;
 
+    // Force session save before redirect
+    await new Promise<void>((resolve, reject) => {
+      req.session.save((err) => {
+        if (err) {
+          console.error('Session save error:', err);
+          reject(err);
+        } else {
+          console.log('Session saved successfully:', {
+            sessionID: req.sessionID,
+            state: state,
+            hasState: !!req.session.oauthState
+          });
+          resolve();
+        }
+      });
+    });
+
+    console.log('Generated Auth URL:', authUrl.toString().replace(process.env.BNET_CLIENT_ID!, 'MASKED_CLIENT_ID'));
     res.redirect(authUrl.toString());
   } catch (error: unknown) {
     console.error('Error in getAuthorizationUrl:', error);
@@ -89,14 +107,43 @@ export const handleCallback = async (
 ): Promise<void> => {
   try {
     const { code, state } = req.query;
-    const frontendCallback =
-      req.session.frontendCallback || "http://localhost:4200/auth/callback";
-    const consent = !!req.session.consent;
+    
+    console.log('Callback received:', {
+      hasCode: !!code,
+      hasState: !!state,
+      receivedState: state,
+      sessionID: req.sessionID,
+      sessionState: req.session?.oauthState,
+      hasSession: !!req.session
+    });
 
-    if (state !== req.session.oauthState) {
-      res.status(403).json({ error: "Invalid state parameter" });
+    if (!req.session) {
+      console.error('No session found in callback');
+      res.redirect(`${process.env.FRONTEND_URL}/auth/callback?error=no_session`);
       return;
     }
+
+    if (!state || !req.session.oauthState) {
+      console.error('Missing state parameters:', {
+        state,
+        sessionState: req.session.oauthState
+      });
+      res.redirect(`${process.env.FRONTEND_URL}/auth/callback?error=missing_state`);
+      return;
+    }
+
+    if (state !== req.session.oauthState) {
+      console.error('State mismatch:', {
+        receivedState: state,
+        sessionState: req.session.oauthState
+      });
+      res.redirect(`${process.env.FRONTEND_URL}/auth/callback?error=invalid_state`);
+      return;
+    }
+
+    const frontendCallback =
+      req.session.frontendCallback || `${process.env.FRONTEND_URL}/auth/callback`;
+    const consent = !!req.session.consent;
 
     const { token, refreshToken } = await BattleNetAPI.getAccessToken(
       code as string
@@ -107,11 +154,9 @@ export const handleCallback = async (
     req.session.isPersistent = consent;
 
     if (consent) {
-      // Persistent session (30 days)
       req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000;
       req.session.refreshToken = refreshToken;
     } else {
-      // Session cookie (browser session only)
       req.session.cookie.maxAge = undefined;
       delete req.session.refreshToken;
     }
@@ -119,26 +164,26 @@ export const handleCallback = async (
     // Force session save before redirect
     await new Promise<void>((resolve, reject) => {
       req.session.save((err) => {
-        if (err) reject(err);
-        else resolve();
+        if (err) {
+          console.error('Session save error:', err);
+          reject(err);
+        } else {
+          resolve();
+        }
       });
     });
 
-    // Include session ID and persistence info in redirect
-    const sessionID = req.sessionID;
     const redirectUrl = new URL(frontendCallback);
-    redirectUrl.searchParams.set("success", "true");
-    redirectUrl.searchParams.set("hasToken", "true");
-    redirectUrl.searchParams.set("persistentSession", consent.toString());
-    redirectUrl.searchParams.set("sid", sessionID);
+    redirectUrl.searchParams.set("code", code as string);
+    redirectUrl.searchParams.set("state", state as string);
 
+    console.log('Redirecting to:', redirectUrl.toString());
     res.redirect(redirectUrl.toString());
-  } catch (error: unknown) {
-    if (error instanceof Error) {
-      handleApiError(error, res, "handle OAuth callback");
-    } else {
-      handleApiError(new Error('Unknown error'), res, "handle OAuth callback");
-    }
+  } catch (error) {
+    console.error('Callback Error:', error);
+    res.redirect(
+      `${process.env.FRONTEND_URL}/auth/callback?error=server_error`
+    );
   }
 };
 
