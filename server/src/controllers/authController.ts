@@ -47,7 +47,7 @@ export const getAuthorizationUrl = async (
     const frontendCallback =
       (req.query.callback as string) || "http://localhost:4200/auth/callback";
     const consent = req.query.consent as string;
-    const state = crypto.randomBytes(16).toString("hex");
+    const state = req.query.state as string || crypto.randomBytes(16).toString("hex");
 
     console.log('Auth Request Details:', {
       frontendCallback,
@@ -57,15 +57,6 @@ export const getAuthorizationUrl = async (
       BNET_CLIENT_ID: process.env.BNET_CLIENT_ID?.substring(0, 8) + '...',
       sessionID: req.sessionID
     });
-
-    const authUrl = new URL(
-      `https://${BattleNetAPI.region}.battle.net/oauth/authorize`
-    );
-    authUrl.searchParams.set("client_id", process.env.BNET_CLIENT_ID!);
-    authUrl.searchParams.set("response_type", "code");
-    authUrl.searchParams.set("redirect_uri", process.env.BNET_CALLBACK_URL!);
-    authUrl.searchParams.set("scope", "wow.profile");
-    authUrl.searchParams.set("state", state);
 
     // Ensure session is created and saved before redirect
     req.session.oauthState = state;
@@ -89,8 +80,18 @@ export const getAuthorizationUrl = async (
       });
     });
 
-    console.log('Generated Auth URL:', authUrl.toString().replace(process.env.BNET_CLIENT_ID!, 'MASKED_CLIENT_ID'));
-    res.redirect(authUrl.toString());
+    const authUrl = new URL(`https://${process.env.BNET_REGION}.battle.net/oauth/authorize`);
+    authUrl.searchParams.set("client_id", process.env.BNET_CLIENT_ID!);
+    authUrl.searchParams.set("response_type", "code");
+    authUrl.searchParams.set("redirect_uri", process.env.BNET_CALLBACK_URL!);
+    authUrl.searchParams.set("scope", "wow.profile");
+    authUrl.searchParams.set("state", state);
+
+    const finalUrl = authUrl.toString();
+    console.log('Generated Auth URL:', finalUrl.replace(process.env.BNET_CLIENT_ID!, 'MASKED_CLIENT_ID'));
+
+    // Instead of redirecting, send the URL back to the client
+    res.json({ url: finalUrl });
   } catch (error: unknown) {
     console.error('Error in getAuthorizationUrl:', error);
     if (error instanceof Error) {
