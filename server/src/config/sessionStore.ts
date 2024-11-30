@@ -1,24 +1,22 @@
 import MongoStore from "connect-mongo";
 import { Store } from "express-session";
+import { SECRETS } from './config';
 
-let store: Store;
+let store: Store | null = null;
 
 export const initializeStore = (mongoUri: string): Store => {
-  store = MongoStore.create({
-    mongoUrl: mongoUri,
-    ttl: 30 * 24 * 60 * 60, // 30 days in seconds
-    collectionName: "sessions",
-    dbName: "wow_character_viewer",
-    mongoOptions: {
-      ssl: true,
-      tls: true,
-      tlsAllowInvalidCertificates: true,
-      retryWrites: true,
-      minPoolSize: 0,
-      serverSelectionTimeoutMS: 5000,
-      socketTimeoutMS: 45000,
-    }
-  });
+  if (!store) {
+    store = MongoStore.create({
+      mongoUrl: mongoUri,
+      ttl: 30 * 24 * 60 * 60, // 30 days
+      touchAfter: 24 * 3600, // 24 hours
+      crypto: {
+        secret: SECRETS.SESSION.SECRET
+      }
+    });
+
+    console.log('Session store initialized');
+  }
   return store;
 };
 

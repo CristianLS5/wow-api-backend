@@ -229,11 +229,15 @@ export const validateToken = async (
   res: Response
 ): Promise<void> => {
   try {
-    const store = getStore();
     const sessionId = req.headers["x-session-id"] as string;
-    const storageType = req.headers["x-storage-type"] as string; // 'session' or 'local'
+    const storageType = req.headers["x-storage-type"] as string;
 
-    // If there's no session ID or storage type, user is not authenticated
+    console.log('Validating token:', {
+      sessionId,
+      storageType,
+      hasHeaders: !!req.headers["x-session-id"] && !!req.headers["x-storage-type"]
+    });
+
     if (!sessionId || !storageType) {
       res.json({
         isAuthenticated: false,
@@ -243,72 +247,80 @@ export const validateToken = async (
       return;
     }
 
-    // Get the session
-    const session = await new Promise<StoredSession | null>(
-      (resolve, reject) => {
-        store.get(sessionId, (error, session) => {
-          if (error) reject(error);
-          resolve(session as StoredSession | null);
-        });
-      }
-    );
-
-    if (!session || !session.accessToken) {
-      res.json({
-        isAuthenticated: false,
-        isPersistent: false,
-        error: "Invalid session",
-      });
-      return;
-    }
-
-    // Validate storage type matches session persistence
-    const isPersistent = !!session.isPersistent;
-    const correctStorageType = isPersistent
-      ? storageType === "local"
-      : storageType === "session";
-
-    if (!correctStorageType) {
-      res.json({
-        isAuthenticated: false,
-        isPersistent: false,
-        error: "Storage type mismatch",
-      });
-      return;
-    }
-
-    const isValid = await BattleNetAPI.validateToken(session.accessToken);
-
-    if (isValid) {
-      // Touch the session
-      session.cookie.expires = new Date(
-        Date.now() + (session.cookie.maxAge || 24 * 60 * 60 * 1000)
+    try {
+      const store = getStore();
+      
+      // Get the session
+      const session = await new Promise<StoredSession | null>(
+        (resolve, reject) => {
+          store.get(sessionId, (error, session) => {
+            if (error) {
+              console.error('Store get error:', error);
+              reject(error);
+            }
+            resolve(session as StoredSession | null);
+          });
+        }
       );
 
-      await new Promise<void>((resolve, reject) => {
-        store.set(sessionId, session, (error) => {
-          if (error) reject(error);
-          resolve();
+      if (!session || !session.accessToken) {
+        console.log('No valid session found:', { sessionId, hasSession: !!session });
+        res.json({
+          isAuthenticated: false,
+          isPersistent: false,
+          error: "Invalid session",
         });
-      });
+        return;
+      }
 
-      res.json({
-        isAuthenticated: true,
-        isPersistent: isPersistent,
-      });
-    } else {
-      res.json({
-        isAuthenticated: false,
-        isPersistent: false,
-        error: "Invalid token",
-      });
+      // Validate storage type matches session persistence
+      const isPersistent = !!session.isPersistent;
+      const correctStorageType = isPersistent
+        ? storageType === "local"
+        : storageType === "session";
+
+      if (!correctStorageType) {
+        res.json({
+          isAuthenticated: false,
+          isPersistent: false,
+          error: "Storage type mismatch",
+        });
+        return;
+      }
+
+      const isValid = await BattleNetAPI.validateToken(session.accessToken);
+
+      if (isValid) {
+        // Touch the session
+        session.cookie.expires = new Date(
+          Date.now() + (session.cookie.maxAge || 24 * 60 * 60 * 1000)
+        );
+
+        await new Promise<void>((resolve, reject) => {
+          store.set(sessionId, session, (error) => {
+            if (error) reject(error);
+            resolve();
+          });
+        });
+
+        res.json({
+          isAuthenticated: true,
+          isPersistent: isPersistent,
+        });
+      } else {
+        res.json({
+          isAuthenticated: false,
+          isPersistent: false,
+          error: "Invalid token",
+        });
+      }
+    } catch (storeError) {
+      console.error('Store operation failed:', storeError);
+      throw storeError;
     }
-  } catch (error: unknown) {
-    if (error instanceof Error) {
-      handleApiError(error, res, "validate token");
-    } else {
-      handleApiError(new Error('Unknown error'), res, "validate token");
-    }
+  } catch (error) {
+    console.error('Validate token error:', error);
+    handleApiError(error as Error, res, "validate token");
   }
 };
 
