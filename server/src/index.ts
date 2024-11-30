@@ -46,18 +46,22 @@ const mongoUri = process.env.MONGODB_URI!;
 
 // CORS configuration
 const corsOptions = {
-  origin: process.env.FRONTEND_URL || "http://localhost:4200",
-  optionsSuccessStatus: 200,
-  credentials: true,
-  methods: ["GET", "POST", "OPTIONS"],
-  allowedHeaders: [
-    "Content-Type",
-    "Authorization",
-    "Cookie",
-    "X-Session-ID",
-    "X-Storage-Type",
+  origin: [
+    'https://wowcharacterviewer.com',
+    'https://api.wowcharacterviewer.com',
+    'https://www.wowcharacterviewer.com',
+    /\.battle\.net$/  // Allow Battle.net domains
   ],
-  exposedHeaders: ["X-Session-ID"],
+  credentials: true,
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'Cookie',
+    'X-Session-ID',
+    'X-Storage-Type'
+  ],
+  exposedHeaders: ['Set-Cookie']
 };
 
 app.use(cors(corsOptions));
