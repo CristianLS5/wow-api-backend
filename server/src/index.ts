@@ -1,5 +1,5 @@
 import express, { NextFunction, Request, Response } from "express";
-import session from "express-session";
+import { initializeSession } from './config/session.config';
 import dotenv from "dotenv";
 import mongoose from "mongoose";
 import cors from "cors";
@@ -19,7 +19,6 @@ import reputationsRoutes from "./routes/reputationsRoutes";
 import dungeonsRoutes from "./routes/dungeonsRoutes";
 import affixesRoutes from "./routes/affixesRoutes";
 import raidsRoutes from "./routes/raidsRoutes";
-import { initializeStore } from './config/sessionStore';
 
 // Load environment variables first
 dotenv.config();
@@ -64,25 +63,8 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
-const store = initializeStore(mongoUri);
-
-// The rest of your session configuration remains the same
-app.use(
-  session({
-    secret: process.env.SESSION_SECRET!,
-    resave: false,
-    saveUninitialized: false,
-    name: "bnet_session",
-    store: store,
-    rolling: true,
-    cookie: {
-      secure: process.env.NODE_ENV === "production",
-      httpOnly: true,
-      sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
-      path: "/",
-    },
-  })
-);
+// Initialize session
+initializeSession(app);
 
 // Routes
 app.use("/auth", authRoutes);

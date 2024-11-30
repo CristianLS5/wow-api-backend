@@ -13,7 +13,8 @@ interface CustomSessionData {
   accessToken?: string;
   refreshToken?: string;
   isPersistent?: boolean;
-  consent?: string;
+  consent?: boolean;
+  authTimestamp?: string;
 }
 
 // Extend the Session interface
@@ -34,7 +35,7 @@ interface StoredSession extends SessionData {
   accessToken?: string;
   refreshToken?: string;
   isPersistent?: boolean;
-  consent?: string;
+  consent?: boolean;
 }
 
 export const getAuthorizationUrl = async (
@@ -68,7 +69,7 @@ export const getAuthorizationUrl = async (
     console.log('Generated Auth URL:', authUrl.toString().replace(process.env.BNET_CLIENT_ID!, 'MASKED_CLIENT_ID'));
 
     req.session.oauthState = state;
-    req.session.consent = consent;
+    req.session.consent = consent === 'true';
     req.session.frontendCallback = frontendCallback;
 
     res.redirect(authUrl.toString());
@@ -90,7 +91,7 @@ export const handleCallback = async (
     const { code, state } = req.query;
     const frontendCallback =
       req.session.frontendCallback || "http://localhost:4200/auth/callback";
-    const consent = req.session.consent === "true"; // Get consent from session
+    const consent = !!req.session.consent;
 
     if (state !== req.session.oauthState) {
       res.status(403).json({ error: "Invalid state parameter" });
@@ -229,20 +230,26 @@ export const validateToken = async (
   }
 };
 
-export const logout = (req: CustomRequest, res: Response): Promise<void> => {
-  return new Promise((resolve) => {
+export const logout = async (
+  req: CustomRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    // Clear session
     req.session.destroy((err) => {
       if (err) {
-        console.error("Error destroying session:", err);
-        res.status(500).json({ error: "Logout failed" });
-      } else {
-        res.clearCookie("connect.sid");
-        res.clearCookie("bnet_refresh_token");
-        res.json({ message: "Logged out successfully" });
+        console.error("Session destruction error:", err);
       }
-      resolve();
+      
+      // Clear cookies
+      res.clearCookie('wcv.sid');
+      res.clearCookie('bnet_refresh_token');
+      
+      res.json({ success: true });
     });
-  });
+  } catch (error) {
+    handleApiError(error as Error, res, "logout");
+  }
 };
 
 export const exchangeToken = async (
@@ -384,61 +391,169 @@ export const validateSession = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { sid, persistentSession } = req.body;
+    const sessionId = req.headers['x-session-id'];
+    const storageType = req.headers['x-storage-type'];
 
-    // Validate the session exists with proper typing
-    const session = await new Promise<StoredSession | null>((resolve, reject) => {
-      const store = getStore();
-      store.get(sid, (error, session) => {
-        if (error) reject(error);
-        resolve(session as StoredSession | null);
+    console.log("Validating session:", {
+      sessionId,
+      currentSessionId: req.sessionID,
+      storageType,
+      hasAccessToken: !!req.session?.accessToken
+    });
+
+    if (!req.session?.accessToken) {
+      res.json({
+        isAuthenticated: false,
+        isPersistent: false
+      });
+      return;
+    }
+
+    // Validate the token with Battle.net
+    const isValid = await BattleNetAPI.validateToken(req.session.accessToken);
+
+    if (!isValid) {
+      // Try to refresh the token if available
+      if (req.session.refreshToken) {
+        try {
+          const { token, refreshToken } = await BattleNetAPI.refreshAccessToken(
+            req.session.refreshToken
+          );
+          req.session.accessToken = token;
+          req.session.refreshToken = refreshToken;
+          await req.session.save();
+        } catch (error) {
+          console.error("Token refresh failed:", error);
+          res.json({
+            isAuthenticated: false,
+            isPersistent: false
+          });
+          return;
+        }
+      } else {
+        res.json({
+          isAuthenticated: false,
+          isPersistent: false
+        });
+        return;
+      }
+    }
+
+    res.json({
+      isAuthenticated: true,
+      isPersistent: !!req.session.isPersistent
+    });
+  } catch (error) {
+    handleApiError(error as Error, res, "validate session");
+  }
+};
+
+export const initiateBnetAuth = async (
+  req: CustomRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { callback, consent, state, timestamp } = req.query;
+
+    if (!callback || !state) {
+      res.status(400).json({ error: "Missing required parameters" });
+      return;
+    }
+
+    // Store state and timestamp in session
+    req.session.oauthState = state as string;
+    req.session.authTimestamp = timestamp as string;
+    req.session.frontendCallback = callback as string;
+    req.session.consent = (consent as string) === 'true';
+
+    // Save session before redirect
+    await new Promise<void>((resolve, reject) => {
+      req.session.save((err) => {
+        if (err) reject(err);
+        else resolve();
       });
     });
 
-    if (!session || !session.accessToken) {
-      res.json({
-        isAuthenticated: false,
-        isPersistent: false,
-        error: "Invalid session",
+    const authUrl = BattleNetAPI.getAuthorizationUrl(
+      callback as string,
+      state as string
+    );
+
+    res.json({ url: authUrl });
+  } catch (error) {
+    handleApiError(error as Error, res, "initiate auth");
+  }
+};
+
+export const handleOAuthCallback = async (
+  req: CustomRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { code, state, sessionId, storageType, storedState } = req.body;
+
+    console.log("OAuth callback received:", {
+      hasCode: !!code,
+      state,
+      sessionId,
+      storageType,
+      storedState,
+      sessionState: req.session?.oauthState
+    });
+
+    if (!code || !state) {
+      res.status(400).json({
+        error: "missing_parameters",
+        message: "Missing code or state"
       });
       return;
     }
 
-    // Validate the token
-    const isValid = await BattleNetAPI.validateToken(session.accessToken);
-    if (!isValid) {
-      res.json({
-        isAuthenticated: false,
-        isPersistent: false,
-        error: "Invalid token",
+    // Validate state
+    if (state !== req.session?.oauthState) {
+      console.error("State mismatch:", {
+        receivedState: state,
+        sessionState: req.session?.oauthState,
+        storedState
+      });
+      res.status(400).json({
+        error: "invalid_state",
+        message: "State validation failed"
       });
       return;
     }
 
-    // Update session persistence if needed
-    if (persistentSession) {
-      session.isPersistent = true;
-      session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days
+    // Exchange code for tokens
+    const { token, refreshToken } = await BattleNetAPI.getAccessToken(code);
+
+    // Update session
+    req.session.accessToken = token;
+    req.session.refreshToken = refreshToken;
+    req.session.isPersistent = !!req.session.consent;
+
+    if (req.session.isPersistent) {
+      req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days
     }
 
-    // Save the updated session
+    // Clear OAuth state
+    delete req.session.oauthState;
+    delete req.session.authTimestamp;
+
+    // Save session
     await new Promise<void>((resolve, reject) => {
-      const store = getStore();
-      store.set(sid, session, (error) => {
-        if (error) reject(error);
-        resolve();
+      req.session.save((err) => {
+        if (err) reject(err);
+        else resolve();
       });
     });
 
     res.json({
       isAuthenticated: true,
-      isPersistent: !!session.isPersistent,
+      isPersistent: req.session.isPersistent,
+      sessionId: req.sessionID,
+      expiresIn: req.session.cookie.maxAge
     });
-  } catch (error: unknown) {
-    if (error instanceof Error) {
-      handleApiError(error, res, "validate session.");
-    } else {
-      handleApiError(new Error('Unknown error'), res, "validate session");
-    }
+  } catch (error) {
+    handleApiError(error as Error, res, "oauth callback");
   }
 };
