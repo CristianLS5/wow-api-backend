@@ -19,6 +19,7 @@ import reputationsRoutes from "./routes/reputationsRoutes";
 import dungeonsRoutes from "./routes/dungeonsRoutes";
 import affixesRoutes from "./routes/affixesRoutes";
 import raidsRoutes from "./routes/raidsRoutes";
+import { URLS } from './config/config';
 
 // Load environment variables first
 dotenv.config();
@@ -28,9 +29,8 @@ const requiredEnvVars = [
   "BNET_REGION",
   "BNET_CLIENT_ID",
   "BNET_CLIENT_SECRET",
-  "BNET_CALLBACK_URL",
   "SESSION_SECRET",
-  "MONGODB_URI",
+  "MONGODB_URI"
 ];
 
 const missingEnvVars = requiredEnvVars.filter((envVar) => !process.env[envVar]);
@@ -40,17 +40,13 @@ if (missingEnvVars.length > 0) {
   );
 }
 
-const app = express();
-const port = process.env.PORT || 3000;
-const mongoUri = process.env.MONGODB_URI!;
-
 // CORS configuration
 const corsOptions = {
   origin: [
-    'https://wowcharacterviewer.com',
-    'https://api.wowcharacterviewer.com',
+    URLS.FRONTEND,
+    URLS.API,
     'https://www.wowcharacterviewer.com',
-    /\.battle\.net$/  // Allow Battle.net domains
+    /\.battle\.net$/
   ],
   credentials: true,
   methods: ['GET', 'POST', 'OPTIONS'],
@@ -63,6 +59,10 @@ const corsOptions = {
   ],
   exposedHeaders: ['Set-Cookie']
 };
+
+const app = express();
+const port = process.env.PORT || 3000;
+const mongoUri = process.env.MONGODB_URI!;
 
 app.use(cors(corsOptions));
 app.use(express.json());

@@ -1,5 +1,6 @@
 import axios from "axios";
 import dotenv from "dotenv";
+import { SECRETS } from '../config/config';
 
 dotenv.config();
 
@@ -10,9 +11,9 @@ class BattleNetAPI {
   private tokenExpiration: number = 0;
 
   constructor() {
-    this.region = process.env.BNET_REGION || "eu";
+    this.region = SECRETS.BNET.REGION;
     if (!this.region) {
-      throw new Error("BNET_REGION is not defined in environment variables");
+      throw new Error("BNET_REGION is not defined");
     }
   }
 
@@ -54,66 +55,35 @@ class BattleNetAPI {
 
   async getAccessToken(
     code: string
-  ): Promise<{ token: string; refreshToken: string; expiresIn: number }> {
-    const tokenUrl = `https://${this.region}.battle.net/oauth/token`;
-    
-    console.log('Getting access token with config:', {
-      region: this.region,
-      callbackUrl: process.env.BNET_CALLBACK_URL,
-      clientId: process.env.BNET_CLIENT_ID?.substring(0, 8) + '...',
-      environment: process.env.NODE_ENV
-    });
+  ): Promise<{ token: string; refreshToken: string }> {
+    const credentials = Buffer.from(
+      `${SECRETS.BNET.CLIENT_ID}:${SECRETS.BNET.CLIENT_SECRET}`
+    ).toString("base64");
 
-    // Create Basic Auth token
-    const basicAuth = Buffer.from(
-      `${process.env.BNET_CLIENT_ID}:${process.env.BNET_CLIENT_SECRET}`
-    ).toString('base64');
-
-    const params = new URLSearchParams({
-      grant_type: "authorization_code",
-      code: code,
-      redirect_uri: process.env.BNET_CALLBACK_URL || "",
-    });
-
-    try {
-      console.log('Making token request to:', tokenUrl);
-      const response = await axios.post(tokenUrl, params.toString(), {
+    const response = await axios.post(
+      `https://${SECRETS.BNET.REGION.toLowerCase()}.battle.net/oauth/token`,
+      new URLSearchParams({
+        grant_type: "authorization_code",
+        code: code,
+        redirect_uri: SECRETS.BNET.CALLBACK_URL,
+        scope: "wow.profile",
+      }),
+      {
         headers: {
-          'Authorization': `Basic ${basicAuth}`,
-          'Content-Type': 'application/x-www-form-urlencoded'
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Authorization': `Basic ${credentials}`
         }
-      });
-
-      console.log('Token request successful');
-      return {
-        token: response.data.access_token,
-        refreshToken: response.data.refresh_token,
-        expiresIn: response.data.expires_in,
-      };
-    } catch (error) {
-      if (axios.isAxiosError(error)) {
-        console.error('Token request failed:', {
-          status: error.response?.status,
-          statusText: error.response?.statusText,
-          data: error.response?.data,
-          url: error.config?.url
-        });
-      } else {
-        console.error("Error getting access token:", error);
       }
-      throw error;
-    }
+    );
+
+    return {
+      token: response.data.access_token,
+      refreshToken: response.data.refresh_token,
+    };
   }
 
   public async ensureValidToken(): Promise<string> {
     if (!this.accessToken || Date.now() >= this.tokenExpiration) {
-      const clientId = process.env.BNET_CLIENT_ID;
-      const clientSecret = process.env.BNET_CLIENT_SECRET;
-
-      if (!clientId || !clientSecret) {
-        throw new Error("Missing required environment variables");
-      }
-
       try {
         const response = await axios.post(
           `https://${this.region}.battle.net/oauth/token`,
@@ -123,11 +93,10 @@ class BattleNetAPI {
           {
             headers: {
               "Content-Type": "application/x-www-form-urlencoded",
-            },
-            auth: {
-              username: clientId,
-              password: clientSecret,
-            },
+              "Authorization": `Basic ${Buffer.from(
+                `${SECRETS.BNET.CLIENT_ID}:${SECRETS.BNET.CLIENT_SECRET}`
+              ).toString("base64")}`
+            }
           }
         );
 
@@ -171,8 +140,8 @@ class BattleNetAPI {
     const params = new URLSearchParams({
       grant_type: 'refresh_token',
       refresh_token: refreshToken,
-      client_id: process.env.BNET_CLIENT_ID || '',
-      client_secret: process.env.BNET_CLIENT_SECRET || '',
+      client_id: SECRETS.BNET.CLIENT_ID,
+      client_secret: SECRETS.BNET.CLIENT_SECRET,
     });
 
     try {
@@ -195,7 +164,7 @@ class BattleNetAPI {
 
   public getAuthorizationUrl(callback: string, state: string): string {
     const params = new URLSearchParams({
-      client_id: process.env.BNET_CLIENT_ID || '',
+      client_id: SECRETS.BNET.CLIENT_ID,
       redirect_uri: callback,
       response_type: 'code',
       state: state,

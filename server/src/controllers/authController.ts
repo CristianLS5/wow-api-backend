@@ -5,6 +5,7 @@ import crypto from "crypto";
 import { Session, SessionData } from "express-session";
 import { Cookie } from "express-session";
 import { getStore } from '../config/sessionStore';
+import { URLS } from '../config/config';
 
 // Define custom session data
 interface CustomSessionData {
@@ -117,12 +118,31 @@ export const handleCallback = async (
       sessionID: req.sessionID,
       sessionState: req.session?.oauthState,
       hasSession: !!req.session,
-      method: req.method
+      method: req.method,
+      isCodeUsed: !!req.session?.accessToken
     });
 
     if (!req.session) {
       console.error('No session found in callback');
-      res.redirect(`${process.env.FRONTEND_URL}/auth/callback?error=no_session`);
+      res.redirect(`${URLS.FRONTEND}/auth/callback?error=no_session`);
+      return;
+    }
+
+    // If we already have a token, don't try to get another one
+    if (req.session.accessToken) {
+      console.log('Token already exists, skipping token exchange');
+      if (req.method === 'POST') {
+        res.json({
+          isAuthenticated: true,
+          isPersistent: req.session.isPersistent,
+          sessionId: req.sessionID
+        });
+      } else {
+        const redirectUrl = new URL(req.session.frontendCallback || `${URLS.FRONTEND}/auth/callback`);
+        redirectUrl.searchParams.set("code", code as string);
+        redirectUrl.searchParams.set("state", state as string);
+        res.redirect(redirectUrl.toString());
+      }
       return;
     }
 
@@ -131,7 +151,7 @@ export const handleCallback = async (
         state,
         sessionState: req.session.oauthState
       });
-      res.redirect(`${process.env.FRONTEND_URL}/auth/callback?error=missing_state`);
+      res.redirect(`${URLS.FRONTEND}/auth/callback?error=missing_state`);
       return;
     }
 
@@ -140,43 +160,54 @@ export const handleCallback = async (
         receivedState: state,
         sessionState: req.session.oauthState
       });
-      res.redirect(`${process.env.FRONTEND_URL}/auth/callback?error=invalid_state`);
+      res.redirect(`${URLS.FRONTEND}/auth/callback?error=invalid_state`);
       return;
     }
 
-    const { token, refreshToken } = await BattleNetAPI.getAccessToken(
-      code as string
-    );
+    try {
+      const { token, refreshToken } = await BattleNetAPI.getAccessToken(code as string);
 
-    // Update session
-    req.session.accessToken = token;
-    req.session.refreshToken = refreshToken;
-    req.session.isPersistent = !!req.session.consent;
+      // Update session
+      req.session.accessToken = token;
+      req.session.refreshToken = refreshToken;
+      req.session.isPersistent = !!req.session.consent;
 
-    if (req.session.isPersistent) {
-      req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days
-    }
+      if (req.session.isPersistent) {
+        req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days
+      }
 
-    // Save session
-    await new Promise<void>((resolve, reject) => {
-      req.session.save((err) => {
-        if (err) reject(err);
-        else resolve();
+      // Clear OAuth state after successful token exchange
+      delete req.session.oauthState;
+
+      // Save session
+      await new Promise<void>((resolve, reject) => {
+        req.session.save((err) => {
+          if (err) reject(err);
+          else resolve();
+        });
       });
-    });
 
-    // Send response based on request method
-    if (req.method === 'POST') {
-      res.json({
-        isAuthenticated: true,
-        isPersistent: req.session.isPersistent,
-        sessionId: req.sessionID
-      });
-    } else {
-      const redirectUrl = new URL(req.session.frontendCallback || `${process.env.FRONTEND_URL}/auth/callback`);
-      redirectUrl.searchParams.set("code", code as string);
-      redirectUrl.searchParams.set("state", state as string);
-      res.redirect(redirectUrl.toString());
+      // Send response based on request method
+      if (req.method === 'POST') {
+        res.json({
+          isAuthenticated: true,
+          isPersistent: req.session.isPersistent,
+          sessionId: req.sessionID
+        });
+      } else {
+        const redirectUrl = new URL(req.session.frontendCallback || `${URLS.FRONTEND}/auth/callback`);
+        redirectUrl.searchParams.set("code", code as string);
+        redirectUrl.searchParams.set("state", state as string);
+        res.redirect(redirectUrl.toString());
+      }
+    } catch (tokenError) {
+      console.error('Token exchange failed:', tokenError);
+      const errorMessage = tokenError instanceof Error ? tokenError.message : 'Token exchange failed';
+      if (req.method === 'POST') {
+        res.status(400).json({ error: 'token_exchange_failed', message: errorMessage });
+      } else {
+        res.redirect(`${URLS.FRONTEND}/auth/callback?error=token_exchange_failed&message=${encodeURIComponent(errorMessage)}`);
+      }
     }
   } catch (error) {
     console.error('Callback Error:', error);
@@ -188,7 +219,7 @@ export const handleCallback = async (
     if (req.method === 'POST') {
       res.status(500).json(errorResponse);
     } else {
-      res.redirect(`${process.env.FRONTEND_URL}/auth/callback?error=${encodeURIComponent(JSON.stringify(errorResponse))}`);
+      res.redirect(`${URLS.FRONTEND}/auth/callback?error=${encodeURIComponent(JSON.stringify(errorResponse))}`);
     }
   }
 };
