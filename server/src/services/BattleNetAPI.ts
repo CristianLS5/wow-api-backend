@@ -192,6 +192,18 @@ class BattleNetAPI {
       throw error;
     }
   }
+
+  public getAuthorizationUrl(callback: string, state: string): string {
+    const params = new URLSearchParams({
+      client_id: process.env.BNET_CLIENT_ID || '',
+      redirect_uri: callback,
+      response_type: 'code',
+      state: state,
+      scope: 'wow.profile'
+    });
+
+    return `https://${this.region}.battle.net/oauth/authorize?${params.toString()}`;
+  }
 }
 
 export default new BattleNetAPI();
