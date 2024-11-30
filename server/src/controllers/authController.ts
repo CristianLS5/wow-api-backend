@@ -590,3 +590,97 @@ export const handleOAuthExchange = async (
     });
   }
 };
+
+export const handleOAuthCallback = async (
+  req: CustomRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { code, state } = req.body;
+
+    console.log("OAuth Exchange received:", {
+      hasCode: !!code,
+      hasState: !!state,
+      sessionState: req.session.oauthState,
+      sessionId: req.sessionID,
+      cookies: req.headers.cookie
+    });
+
+    // Ensure session exists
+    if (!req.session) {
+      console.error("No session found");
+      res.status(401).json({
+        error: "no_session",
+        message: "Session not found",
+        isAuthenticated: false
+      });
+      return;
+    }
+
+    // More lenient state validation during development
+    if (process.env.NODE_ENV === 'development') {
+      if (!state || !code) {
+        res.status(400).json({
+          error: "missing_parameters",
+          message: "Missing code or state",
+          isAuthenticated: false
+        });
+        return;
+      }
+    } else {
+      // Strict state validation in production
+      if (!state || !req.session.oauthState || state !== req.session.oauthState) {
+        console.error("State mismatch:", {
+          receivedState: state,
+          sessionState: req.session.oauthState
+        });
+        res.status(400).json({
+          error: "invalid_state",
+          message: "State validation failed",
+          isAuthenticated: false
+        });
+        return;
+      }
+    }
+
+    // Clear state after verification
+    delete req.session.oauthState;
+
+    // Exchange code for tokens
+    const { token, refreshToken } = await BattleNetAPI.getAccessToken(code);
+    
+    // Store in session
+    req.session.accessToken = token;
+    req.session.refreshToken = refreshToken;
+    
+    // Force session save
+    await new Promise<void>((resolve, reject) => {
+      req.session.save((err) => {
+        if (err) {
+          console.error("Session save error:", err);
+          reject(err);
+        } else {
+          console.log("Session saved successfully:", {
+            sessionId: req.sessionID,
+            hasAccessToken: !!req.session.accessToken
+          });
+          resolve();
+        }
+      });
+    });
+
+    res.json({
+      isAuthenticated: true,
+      isPersistent: !!req.session.isPersistent,
+      sessionId: req.sessionID,
+      message: "Authentication successful"
+    });
+  } catch (error) {
+    console.error("OAuth Exchange Error:", error);
+    res.status(500).json({ 
+      error: "server_error",
+      message: "Internal server error during OAuth exchange",
+      isAuthenticated: false 
+    });
+  }
+};
