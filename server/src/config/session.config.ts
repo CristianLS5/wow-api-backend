@@ -10,8 +10,8 @@ export const initializeSession = (app: Application): void => {
   // Then use it in session configuration
   const sessionConfig: SessionOptions = {
     secret: SECRETS.SESSION.SECRET,
-    resave: true,
-    saveUninitialized: true,
+    resave: false,
+    saveUninitialized: false,
     name: 'wcv.sid',
     store,
     proxy: true,
@@ -25,6 +25,11 @@ export const initializeSession = (app: Application): void => {
     }
   };
 
+  app.enable('trust proxy');
   app.use(session(sessionConfig));
-  console.log('Session middleware initialized');
+  console.log('Session middleware initialized with cookie settings:', {
+    secure: true,
+    sameSite: 'none',
+    domain: '.wowcharacterviewer.com'
+  });
 };

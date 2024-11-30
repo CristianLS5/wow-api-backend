@@ -64,11 +64,17 @@ const app = express();
 const port = process.env.PORT || 3000;
 const mongoUri = process.env.MONGODB_URI!;
 
-// Initialize express
-app.use(cors(corsOptions));
-app.use(express.json());
+// Enable trust proxy first
+app.enable('trust proxy');
 
-// Initialize session before routes
+// Then CORS
+app.use(cors(corsOptions));
+
+// Then body parser
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Then session
 initializeSession(app);
 
 // Routes
