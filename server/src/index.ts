@@ -56,8 +56,8 @@ const store = initializeStore(mongoUri);
 app.use(
   session({
     secret: process.env.SESSION_SECRET!,
-    resave: true,
-    saveUninitialized: true,
+    resave: false,
+    saveUninitialized: false,
     name: "wcv.sid",
     store: store,
     proxy: true,
@@ -81,7 +81,8 @@ app.use(cors({
   ],
   credentials: true,
   methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Session-Id', 'Cookie'],
+  exposedHeaders: ['Set-Cookie']
 }));
 
 app.use(express.json());

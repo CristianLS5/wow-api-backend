@@ -61,8 +61,7 @@ export const getAuthorizationUrl = async (
         console.log('Session saved:', {
           sessionID: req.sessionID,
           state: state,
-          oauthState: req.session.oauthState,
-          cookie: req.session.cookie
+          oauthState: req.session.oauthState
         });
         resolve();
       });
@@ -78,10 +77,11 @@ export const getAuthorizationUrl = async (
 
     // Set cookie headers explicitly
     res.setHeader('Set-Cookie', [
-      `wcv.sid=${req.sessionID}; Path=/; Domain=.wowcharacterviewer.com; Secure; HttpOnly; SameSite=None`
+      `wcv.sid=${req.sessionID}; Path=/; Domain=.wowcharacterviewer.com; Secure; HttpOnly; SameSite=None; Max-Age=86400`
     ]);
 
-    res.redirect(`https://${process.env.BNET_REGION}.battle.net/oauth/authorize?${params}`);
+    const authUrl = `https://${process.env.BNET_REGION}.battle.net/oauth/authorize?${params}`;
+    res.json({ url: authUrl, state });
   } catch (error) {
     console.error('Auth URL Error:', error);
     res.status(500).json({ error: 'Failed to generate authorization URL' });
@@ -500,15 +500,41 @@ export const handleOAuthExchange = async (
       hasState: !!state,
       sessionState: req.session.oauthState,
       sessionId: req.sessionID,
+      cookies: req.headers.cookie
     });
 
-    // Verify state parameter
-    if (!state || !req.session.oauthState || state !== req.session.oauthState) {
-      res.status(400).json({ 
-        error: "invalid_state",
-        isAuthenticated: false 
+    // Ensure session exists
+    if (!req.session) {
+      console.error("No session found");
+      res.status(401).json({
+        error: "no_session",
+        isAuthenticated: false
       });
       return;
+    }
+
+    // More lenient state validation during development
+    if (process.env.NODE_ENV === 'development') {
+      if (!state) {
+        res.status(400).json({
+          error: "missing_state",
+          isAuthenticated: false
+        });
+        return;
+      }
+    } else {
+      // Strict state validation in production
+      if (!state || !req.session.oauthState || state !== req.session.oauthState) {
+        console.error("State mismatch:", {
+          receivedState: state,
+          sessionState: req.session.oauthState
+        });
+        res.status(400).json({
+          error: "invalid_state",
+          isAuthenticated: false
+        });
+        return;
+      }
     }
 
     // Clear state after verification
@@ -521,13 +547,27 @@ export const handleOAuthExchange = async (
     req.session.accessToken = token;
     req.session.refreshToken = refreshToken;
     
+    // Force session save
     await new Promise<void>((resolve, reject) => {
-      req.session.save((err) => err ? reject(err) : resolve());
+      req.session.save((err) => {
+        if (err) {
+          console.error("Session save error:", err);
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
     });
+
+    // Set cookie headers explicitly
+    res.setHeader('Set-Cookie', [
+      `wcv.sid=${req.sessionID}; Path=/; Domain=.wowcharacterviewer.com; Secure; HttpOnly; SameSite=None`
+    ]);
 
     res.json({
       isAuthenticated: true,
-      isPersistent: !!req.session.isPersistent
+      isPersistent: !!req.session.isPersistent,
+      sessionId: req.sessionID
     });
   } catch (error) {
     console.error("OAuth Exchange Error:", error);
