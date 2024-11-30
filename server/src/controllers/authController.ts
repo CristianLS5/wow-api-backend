@@ -436,7 +436,7 @@ export const validateSession = async (
     });
   } catch (error: unknown) {
     if (error instanceof Error) {
-      handleApiError(error, res, "validate session");
+      handleApiError(error, res, "validate session.");
     } else {
       handleApiError(new Error('Unknown error'), res, "validate session");
     }
