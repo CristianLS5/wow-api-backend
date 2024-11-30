@@ -107,7 +107,8 @@ export const handleCallback = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { code, state } = req.query;
+    const code = req.query.code || req.body.code;
+    const state = req.query.state || req.body.state;
     
     console.log('Callback received:', {
       hasCode: !!code,
@@ -115,7 +116,8 @@ export const handleCallback = async (
       receivedState: state,
       sessionID: req.sessionID,
       sessionState: req.session?.oauthState,
-      hasSession: !!req.session
+      hasSession: !!req.session,
+      method: req.method
     });
 
     if (!req.session) {
@@ -142,49 +144,52 @@ export const handleCallback = async (
       return;
     }
 
-    const frontendCallback =
-      req.session.frontendCallback || `${process.env.FRONTEND_URL}/auth/callback`;
-    const consent = !!req.session.consent;
-
     const { token, refreshToken } = await BattleNetAPI.getAccessToken(
       code as string
     );
 
-    // Set session values based on consent
+    // Update session
     req.session.accessToken = token;
-    req.session.isPersistent = consent;
+    req.session.refreshToken = refreshToken;
+    req.session.isPersistent = !!req.session.consent;
 
-    if (consent) {
-      req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000;
-      req.session.refreshToken = refreshToken;
-    } else {
-      req.session.cookie.maxAge = undefined;
-      delete req.session.refreshToken;
+    if (req.session.isPersistent) {
+      req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days
     }
 
-    // Force session save before redirect
+    // Save session
     await new Promise<void>((resolve, reject) => {
       req.session.save((err) => {
-        if (err) {
-          console.error('Session save error:', err);
-          reject(err);
-        } else {
-          resolve();
-        }
+        if (err) reject(err);
+        else resolve();
       });
     });
 
-    const redirectUrl = new URL(frontendCallback);
-    redirectUrl.searchParams.set("code", code as string);
-    redirectUrl.searchParams.set("state", state as string);
-
-    console.log('Redirecting to:', redirectUrl.toString());
-    res.redirect(redirectUrl.toString());
+    // Send response based on request method
+    if (req.method === 'POST') {
+      res.json({
+        isAuthenticated: true,
+        isPersistent: req.session.isPersistent,
+        sessionId: req.sessionID
+      });
+    } else {
+      const redirectUrl = new URL(req.session.frontendCallback || `${process.env.FRONTEND_URL}/auth/callback`);
+      redirectUrl.searchParams.set("code", code as string);
+      redirectUrl.searchParams.set("state", state as string);
+      res.redirect(redirectUrl.toString());
+    }
   } catch (error) {
     console.error('Callback Error:', error);
-    res.redirect(
-      `${process.env.FRONTEND_URL}/auth/callback?error=server_error`
-    );
+    const errorResponse = {
+      error: "server_error",
+      message: error instanceof Error ? error.message : "Unknown error"
+    };
+
+    if (req.method === 'POST') {
+      res.status(500).json(errorResponse);
+    } else {
+      res.redirect(`${process.env.FRONTEND_URL}/auth/callback?error=${encodeURIComponent(JSON.stringify(errorResponse))}`);
+    }
   }
 };
 
