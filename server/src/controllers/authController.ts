@@ -46,6 +46,12 @@ export const getAuthorizationUrl = async (
   try {
     const state = crypto.randomBytes(16).toString('hex');
     
+    // Store the callback URL if provided
+    const frontendCallback = req.query.callback as string;
+    if (frontendCallback) {
+      req.session.frontendCallback = frontendCallback;
+    }
+    
     // Set the state in session
     req.session.oauthState = state;
     req.session.cookie.sameSite = 'none';
@@ -65,6 +71,7 @@ export const getAuthorizationUrl = async (
           sessionID: req.sessionID,
           state: state,
           oauthState: req.session.oauthState,
+          frontendCallback: req.session.frontendCallback,
           cookie: req.session.cookie
         });
         resolve();
@@ -79,22 +86,15 @@ export const getAuthorizationUrl = async (
       redirect_uri: process.env.BNET_CALLBACK_URL!
     });
 
-    // Set cookie headers explicitly with all required attributes
+    // Set cookie headers explicitly
     res.setHeader('Set-Cookie', [
       `wcv.sid=${req.sessionID}; Path=/; Domain=.wowcharacterviewer.com; Secure; HttpOnly; SameSite=None; Max-Age=86400`
     ]);
 
     const authUrl = `https://${process.env.BNET_REGION}.battle.net/oauth/authorize?${params}`;
     
-    // Add debug headers to response
-    res.setHeader('X-Debug-Session-ID', req.sessionID);
-    res.setHeader('X-Debug-State', state);
-    
-    res.json({ 
-      url: authUrl, 
-      state,
-      sessionId: req.sessionID // Include session ID in response
-    });
+    // Perform the redirect instead of sending JSON
+    res.redirect(authUrl);
   } catch (error) {
     console.error('Auth URL Error:', error);
     res.status(500).json({ error: 'Failed to generate authorization URL' });
