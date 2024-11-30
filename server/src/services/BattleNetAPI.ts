@@ -57,13 +57,17 @@ class BattleNetAPI {
   ): Promise<{ token: string; refreshToken: string; expiresIn: number }> {
     const tokenUrl = `https://${this.region}.battle.net/oauth/token`;
     
-    // Add logging for debugging
     console.log('Getting access token with config:', {
       region: this.region,
       callbackUrl: process.env.BNET_CALLBACK_URL,
-      clientId: process.env.BNET_CLIENT_ID?.substring(0, 8) + '...', // Log partial client ID for security
+      clientId: process.env.BNET_CLIENT_ID?.substring(0, 8) + '...',
       environment: process.env.NODE_ENV
     });
+
+    // Create Basic Auth token
+    const basicAuth = Buffer.from(
+      `${process.env.BNET_CLIENT_ID}:${process.env.BNET_CLIENT_SECRET}`
+    ).toString('base64');
 
     const params = new URLSearchParams({
       grant_type: "authorization_code",
@@ -74,13 +78,10 @@ class BattleNetAPI {
     try {
       console.log('Making token request to:', tokenUrl);
       const response = await axios.post(tokenUrl, params.toString(), {
-        auth: {
-          username: process.env.BNET_CLIENT_ID || "",
-          password: process.env.BNET_CLIENT_SECRET || "",
-        },
         headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
+          'Authorization': `Basic ${basicAuth}`,
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }
       });
 
       console.log('Token request successful');
@@ -90,7 +91,6 @@ class BattleNetAPI {
         expiresIn: response.data.expires_in,
       };
     } catch (error) {
-      // Enhanced error logging
       if (axios.isAxiosError(error)) {
         console.error('Token request failed:', {
           status: error.response?.status,
