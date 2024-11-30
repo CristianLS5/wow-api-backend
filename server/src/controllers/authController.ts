@@ -598,12 +598,13 @@ export const handleOAuthCallback = async (
   try {
     const { code, state } = req.body;
 
-    console.log("OAuth Exchange received:", {
-      hasCode: !!code,
-      hasState: !!state,
-      sessionState: req.session.oauthState,
-      sessionId: req.sessionID,
-      cookies: req.headers.cookie
+    // Debug session state
+    console.log("Session Debug:", {
+      id: req.sessionID,
+      state: state,
+      oauthState: req.session?.oauthState,
+      cookie: req.session?.cookie,
+      rawCookies: req.headers.cookie
     });
 
     // Ensure session exists
@@ -632,14 +633,55 @@ export const handleOAuthCallback = async (
       if (!state || !req.session.oauthState || state !== req.session.oauthState) {
         console.error("State mismatch:", {
           receivedState: state,
-          sessionState: req.session.oauthState
+          sessionState: req.session.oauthState,
+          sessionID: req.sessionID,
+          cookies: req.headers.cookie
         });
-        res.status(400).json({
-          error: "invalid_state",
-          message: "State validation failed",
-          isAuthenticated: false
-        });
-        return;
+        
+        // Try to recover session from cookie
+        const sessionCookie = req.headers.cookie?.split(';')
+          .find(c => c.trim().startsWith('wcv.sid='));
+        
+        if (sessionCookie) {
+          const sessionID = sessionCookie.split('=')[1];
+          console.log("Attempting session recovery with:", sessionID);
+          
+          // Force session reload
+          await new Promise((resolve) => {
+            req.sessionStore.get(sessionID, (_err, sess) => {
+              if (sess) {
+                req.session.regenerate((err) => {
+                  if (!err) {
+                    Object.assign(req.session, sess);
+                    console.log("Session recovered:", sess);
+                  }
+                  resolve(null);
+                });
+              } else {
+                resolve(null);
+              }
+            });
+          });
+          
+          // Recheck state after recovery
+          if (state === req.session.oauthState) {
+            console.log("State validated after session recovery");
+          } else {
+            res.status(400).json({
+              error: "invalid_state",
+              message: "State validation failed",
+              isAuthenticated: false
+            });
+            return;
+          }
+        } else {
+          res.status(400).json({
+            error: "invalid_state",
+            message: "State validation failed",
+            isAuthenticated: false
+          });
+          return;
+        }
       }
     }
 
