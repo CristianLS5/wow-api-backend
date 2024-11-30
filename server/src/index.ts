@@ -47,7 +47,7 @@ const port = process.env.PORT || 3000;
 const mongoUri = process.env.MONGODB_URI!;
 
 // Add this before session middleware
-app.enable('trust proxy');
+app.set('trust proxy', 1);
 
 // Initialize store first
 const store = initializeStore(mongoUri);
@@ -57,7 +57,7 @@ app.use(
   session({
     secret: process.env.SESSION_SECRET!,
     resave: false,
-    saveUninitialized: false,
+    saveUninitialized: true,
     name: "wcv.sid",
     store: store,
     proxy: true,

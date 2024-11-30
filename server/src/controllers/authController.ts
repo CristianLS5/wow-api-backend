@@ -49,6 +49,9 @@ export const getAuthorizationUrl = async (
     // Set the state in session
     req.session.oauthState = state;
     req.session.cookie.sameSite = 'none';
+    req.session.cookie.secure = true;
+    req.session.cookie.domain = '.wowcharacterviewer.com';
+    req.session.cookie.path = '/';
     
     // Force session save and wait for completion
     await new Promise<void>((resolve, reject) => {
@@ -61,7 +64,8 @@ export const getAuthorizationUrl = async (
         console.log('Session saved:', {
           sessionID: req.sessionID,
           state: state,
-          oauthState: req.session.oauthState
+          oauthState: req.session.oauthState,
+          cookie: req.session.cookie
         });
         resolve();
       });
@@ -75,13 +79,22 @@ export const getAuthorizationUrl = async (
       redirect_uri: process.env.BNET_CALLBACK_URL!
     });
 
-    // Set cookie headers explicitly
+    // Set cookie headers explicitly with all required attributes
     res.setHeader('Set-Cookie', [
       `wcv.sid=${req.sessionID}; Path=/; Domain=.wowcharacterviewer.com; Secure; HttpOnly; SameSite=None; Max-Age=86400`
     ]);
 
     const authUrl = `https://${process.env.BNET_REGION}.battle.net/oauth/authorize?${params}`;
-    res.json({ url: authUrl, state });
+    
+    // Add debug headers to response
+    res.setHeader('X-Debug-Session-ID', req.sessionID);
+    res.setHeader('X-Debug-State', state);
+    
+    res.json({ 
+      url: authUrl, 
+      state,
+      sessionId: req.sessionID // Include session ID in response
+    });
   } catch (error) {
     console.error('Auth URL Error:', error);
     res.status(500).json({ error: 'Failed to generate authorization URL' });
