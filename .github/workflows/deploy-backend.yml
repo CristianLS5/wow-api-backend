@@ -1,0 +1,66 @@
+name: Deploy Backend to EC2
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'server/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Build Docker image
+        run: |
+          cd server
+          docker build -t wow-backend-image -f Dockerfile.prod .
+          docker save wow-backend-image > wow-backend-image.tar
+      
+      - name: Copy Docker image to EC2
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ec2-user
+          target: "~/"
+          source: "wow-backend-image.tar"
+          key: ${{ secrets.EC2_SSH_KEY }}
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            # Load the new image
+            docker load < ~/wow-backend-image.tar
+            
+            # Stop and remove existing container
+            docker stop wow-backend || true
+            docker rm wow-backend || true
+            
+            # Run new container
+            docker run -d \
+              --name wow-backend \
+              --network wow-app-network \
+              -p 8080:8080 \
+              --restart unless-stopped \
+              -e MONGODB_URI="${{ secrets.MONGODB_URI }}" \
+              -e BNET_REGION="${{ secrets.BNET_REGION }}" \
+              -e BNET_CLIENT_ID="${{ secrets.BNET_CLIENT_ID }}" \
+              -e BNET_CLIENT_SECRET="${{ secrets.BNET_CLIENT_SECRET }}" \
+              -e BNET_CALLBACK_URL="${{ secrets.BNET_CALLBACK_URL }}" \
+              -e SESSION_SECRET="${{ secrets.SESSION_SECRET }}" \
+              -e FRONTEND_URL="https://wowcharacterviewer.com" \
+              -e NODE_ENV="production" \
+              wow-backend-image
+            
+            # Cleanup
+            rm ~/wow-backend-image.tar
+            docker system prune -af --volumes
+            
+            # Verify deployment
+            echo "Checking if container is running..."
+            docker ps | grep wow-backend
