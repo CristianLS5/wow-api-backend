@@ -5,28 +5,30 @@ on:
     branches: [ main ]
     paths:
       - 'server/**'
+      - '.github/workflows/**'
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-
+      
       - name: Build Docker image
         run: |
           cd server
           docker build -t wow-backend-image -f Dockerfile.prod .
           docker save wow-backend-image > wow-backend-image.tar
       
-      - name: Copy Docker image to EC2
+      - name: Copy files to EC2
         uses: appleboy/scp-action@master
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ec2-user
-          target: "~/"
-          source: "wow-backend-image.tar"
           key: ${{ secrets.EC2_SSH_KEY }}
-
+          source: "server/wow-backend-image.tar,server/nginx/api.wowcharacterviewer.conf"
+          target: "~/"
+          strip_components: 1
+      
       - name: Deploy to EC2
         uses: appleboy/ssh-action@master
         with:
@@ -34,12 +36,23 @@ jobs:
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
+            # Debug information
+            echo "Current directory contents:"
+            ls -la ~/
+            
+            echo "Checking for Docker image:"
+            ls -l ~/wow-backend-image.tar || echo "Image not found"
+            
             # Load the new image
             docker load < ~/wow-backend-image.tar
             
             # Stop and remove existing container
             docker stop wow-backend || true
             docker rm wow-backend || true
+            
+            # Copy nginx configuration
+            sudo cp ~/api.wowcharacterviewer.conf /etc/nginx/conf.d/
+            sudo nginx -t && sudo systemctl reload nginx
             
             # Run new container
             docker run -d \
@@ -53,14 +66,17 @@ jobs:
               -e BNET_CLIENT_SECRET="${{ secrets.BNET_CLIENT_SECRET }}" \
               -e BNET_CALLBACK_URL="${{ secrets.BNET_CALLBACK_URL }}" \
               -e SESSION_SECRET="${{ secrets.SESSION_SECRET }}" \
-              -e FRONTEND_URL="https://wowcharacterviewer.com" \
+              -e COOKIE_SECRET="${{ secrets.COOKIE_SECRET }}" \
               -e NODE_ENV="production" \
+              -e FRONTEND_URL="https://wowcharacterviewer.com" \
               wow-backend-image
             
             # Cleanup
             rm ~/wow-backend-image.tar
-            docker system prune -af --volumes
             
             # Verify deployment
             echo "Checking if container is running..."
             docker ps | grep wow-backend
+            
+            # Check nginx status
+            sudo systemctl status nginx
