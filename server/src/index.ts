@@ -64,10 +64,11 @@ const app = express();
 const port = process.env.PORT || 3000;
 const mongoUri = process.env.MONGODB_URI!;
 
+// Initialize express
 app.use(cors(corsOptions));
 app.use(express.json());
 
-// Initialize session
+// Initialize session before routes
 initializeSession(app);
 
 // Routes

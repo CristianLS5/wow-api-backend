@@ -1,29 +1,30 @@
 import session, { SessionOptions } from 'express-session';
-import MongoStore from 'connect-mongo';
 import { Application } from 'express';
-import { config } from './config';
-
-export const sessionConfig: SessionOptions = {
-  secret: config.sessionSecret,
-  resave: true,
-  saveUninitialized: true,
-  name: 'wcv.sid',
-  store: MongoStore.create({
-    mongoUrl: config.mongoUri,
-    ttl: 30 * 24 * 60 * 60, // 30 days
-    touchAfter: 24 * 3600 // 24 hours
-  }),
-  proxy: true,
-  cookie: {
-    secure: true,
-    httpOnly: true,
-    sameSite: 'none',
-    domain: '.wowcharacterviewer.com',
-    path: '/',
-    maxAge: 24 * 60 * 60 * 1000
-  }
-};
+import { initializeStore } from './sessionStore';
+import { SECRETS } from './config';
 
 export const initializeSession = (app: Application): void => {
+  // Initialize store first
+  const store = initializeStore(SECRETS.MONGODB.URI);
+
+  // Then use it in session configuration
+  const sessionConfig: SessionOptions = {
+    secret: SECRETS.SESSION.SECRET,
+    resave: true,
+    saveUninitialized: true,
+    name: 'wcv.sid',
+    store,
+    proxy: true,
+    cookie: {
+      secure: true,
+      httpOnly: true,
+      sameSite: 'none',
+      domain: '.wowcharacterviewer.com',
+      path: '/',
+      maxAge: 24 * 60 * 60 * 1000
+    }
+  };
+
   app.use(session(sessionConfig));
+  console.log('Session middleware initialized');
 };
