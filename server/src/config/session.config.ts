@@ -3,9 +3,16 @@ import { Application, Request, Response, NextFunction } from 'express';
 import { initializeStore } from './sessionStore';
 import { SECRETS } from './config';
 
-// Extend Session type to include isNew
+// Extend Session type to include all custom properties
 interface CustomSession extends Session {
   isNew?: boolean;
+  oauthState?: string;
+  authTimestamp?: string;
+  frontendCallback?: string;
+  accessToken?: string;
+  refreshToken?: string;
+  isPersistent?: boolean;
+  consent?: boolean;
 }
 
 interface CustomRequest extends Request {
@@ -35,25 +42,21 @@ export const initializeSession = (app: Application): void => {
     }
   };
 
-  app.enable('trust proxy');
-  app.use(session(sessionConfig));
+  // Enable trust proxy before session middleware
+  app.set('trust proxy', 1);
   
+  app.use(session(sessionConfig));
+
   // Add session debug middleware in development
   if (process.env.NODE_ENV !== 'production') {
     app.use((req: CustomRequest, _res: Response, next: NextFunction) => {
       console.log('Session Debug:', {
         id: req.sessionID,
         cookie: req.session?.cookie,
-        isNew: req.session?.isNew
+        isNew: req.session?.isNew,
+        oauthState: req.session?.oauthState
       });
       next();
     });
   }
-
-  console.log('Session middleware initialized with cookie settings:', {
-    secure: true,
-    sameSite: 'none',
-    domain: '.wowcharacterviewer.com',
-    rolling: true
-  });
 };

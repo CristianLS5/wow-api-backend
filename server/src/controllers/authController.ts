@@ -584,15 +584,15 @@ export const handleOAuthCallback = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { code, state, sessionId, storageType, storedState } = req.body;
+    const { code, state } = req.body;
 
-    console.log("OAuth callback received:", {
+    console.log("OAuth callback details:", {
       hasCode: !!code,
-      state,
-      sessionId,
-      storageType,
-      storedState,
-      sessionState: req.session?.oauthState
+      state: state,
+      sessionID: req.sessionID,
+      sessionState: req.session?.oauthState,
+      hasSession: !!req.session,
+      sessionCookie: req.headers.cookie
     });
 
     if (!code || !state) {
@@ -603,12 +603,35 @@ export const handleOAuthCallback = async (
       return;
     }
 
-    // Validate state
-    if (state !== req.session?.oauthState) {
+    // Check if session exists
+    if (!req.session) {
+      console.error('No session found during callback');
+      res.status(400).json({
+        error: "no_session",
+        message: "Session not found"
+      });
+      return;
+    }
+
+    // More detailed state validation
+    if (!req.session.oauthState) {
+      console.error('No oauth state in session:', {
+        sessionID: req.sessionID,
+        hasSession: !!req.session,
+        sessionKeys: Object.keys(req.session)
+      });
+      res.status(400).json({
+        error: "missing_session_state",
+        message: "No OAuth state found in session"
+      });
+      return;
+    }
+
+    if (state !== req.session.oauthState) {
       console.error("State mismatch:", {
         receivedState: state,
-        sessionState: req.session?.oauthState,
-        storedState
+        sessionState: req.session.oauthState,
+        sessionID: req.sessionID
       });
       res.status(400).json({
         error: "invalid_state",
@@ -633,11 +656,15 @@ export const handleOAuthCallback = async (
     delete req.session.oauthState;
     delete req.session.authTimestamp;
 
-    // Save session
+    // Save session explicitly
     await new Promise<void>((resolve, reject) => {
       req.session.save((err) => {
-        if (err) reject(err);
-        else resolve();
+        if (err) {
+          console.error('Session save error:', err);
+          reject(err);
+        } else {
+          resolve();
+        }
       });
     });
 
@@ -648,6 +675,7 @@ export const handleOAuthCallback = async (
       expiresIn: req.session.cookie.maxAge
     });
   } catch (error) {
+    console.error('OAuth callback error:', error);
     handleApiError(error as Error, res, "oauth callback");
   }
 };
