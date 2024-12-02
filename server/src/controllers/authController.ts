@@ -1,7 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import BattleNetAPI from "../services/BattleNetAPI";
 import { handleApiError } from "../utils/errorHandler";
-import crypto from "crypto";
 import { Session, SessionData } from "express-session";
 import { Cookie } from "express-session";
 import { getStore } from '../config/sessionStore';
@@ -16,6 +15,7 @@ interface CustomSessionData {
   isPersistent?: boolean;
   consent?: boolean;
   authTimestamp?: string;
+  storageType?: string;
 }
 
 // Extend the Session interface
@@ -37,6 +37,7 @@ interface StoredSession extends SessionData {
   refreshToken?: string;
   isPersistent?: boolean;
   consent?: boolean;
+  storageType?: string;
 }
 
 export const getAuthorizationUrl = async (
@@ -45,14 +46,32 @@ export const getAuthorizationUrl = async (
   _next: NextFunction
 ): Promise<void> => {
   try {
-    const frontendCallback = (req.query.callback as string) || URLS.FRONTEND;
+    const frontendCallback = req.query.callback as string;
     const consent = req.query.consent === 'true';
-    const state = crypto.randomBytes(32).toString('hex');
+    const state = req.query.state as string;
+    const timestamp = req.query.timestamp as string;
+    const storageType = req.query.storageType as string;
 
-    // Store state in session
+    if (!frontendCallback || !state) {
+      res.status(400).json({ error: "Missing required parameters" });
+      return;
+    }
+
+    console.log('Auth Request Details:', {
+      frontendCallback,
+      consent,
+      state,
+      timestamp,
+      storageType,
+      sessionID: req.sessionID
+    });
+
+    // Store state and metadata in session
     req.session.oauthState = state;
     req.session.frontendCallback = frontendCallback;
     req.session.consent = consent;
+    req.session.authTimestamp = timestamp;
+    req.session.storageType = storageType;
 
     // Force session save
     await new Promise<void>((resolve, reject) => {
@@ -61,24 +80,27 @@ export const getAuthorizationUrl = async (
           console.error('Session save error:', err);
           reject(err);
         } else {
-          console.log('Session saved successfully:', {
+          console.log('Session saved:', {
             sessionID: req.sessionID,
-            state: state
+            state,
+            hasState: !!req.session.oauthState
           });
           resolve();
         }
       });
     });
 
-    const authUrl = BattleNetAPI.getAuthorizationUrl(
-      process.env.BNET_CALLBACK_URL!,
-      state
-    );
+    const authUrl = new URL(`https://${process.env.BNET_REGION}.battle.net/oauth/authorize`);
+    authUrl.searchParams.set("client_id", process.env.BNET_CLIENT_ID!);
+    authUrl.searchParams.set("response_type", "code");
+    authUrl.searchParams.set("redirect_uri", process.env.BNET_CALLBACK_URL!);
+    authUrl.searchParams.set("scope", "wow.profile");
+    authUrl.searchParams.set("state", state);
 
     res.json({ 
-      url: authUrl,
-      state: state,
-      sessionId: req.sessionID 
+      url: authUrl.toString(),
+      sessionId: req.sessionID,
+      state
     });
   } catch (error) {
     console.error('Error in getAuthorizationUrl:', error);
@@ -569,13 +591,17 @@ export const handleOAuthCallback = async (
   try {
     const code = req.query.code || req.body.code;
     const state = req.query.state || req.body.state;
+    const storageType = req.headers['x-storage-type'] as string;
     
     console.log('OAuth Callback Details:', {
       hasCode: !!code,
       hasState: !!state,
       sessionID: req.sessionID,
       storedState: req.session?.oauthState,
-      hasSession: !!req.session
+      storageType,
+      hasSession: !!req.session,
+      headers: req.headers,
+      cookies: req.cookies
     });
 
     if (!req.session) {
@@ -583,13 +609,19 @@ export const handleOAuthCallback = async (
     }
 
     if (!state || !req.session.oauthState) {
+      console.error('Missing state parameters:', {
+        receivedState: state,
+        sessionState: req.session.oauthState,
+        sessionID: req.sessionID
+      });
       throw new Error('Missing state parameters');
     }
 
     if (state !== req.session.oauthState) {
       console.error('State mismatch:', {
         receivedState: state,
-        sessionState: req.session.oauthState
+        sessionState: req.session.oauthState,
+        sessionID: req.sessionID
       });
       throw new Error('State validation failed');
     }
@@ -600,7 +632,7 @@ export const handleOAuthCallback = async (
     // Update session
     req.session.accessToken = token;
     req.session.refreshToken = refreshToken;
-    req.session.isPersistent = !!req.session.consent;
+    req.session.isPersistent = req.session.consent === true;
 
     if (req.session.isPersistent) {
       req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000;
@@ -608,6 +640,7 @@ export const handleOAuthCallback = async (
 
     // Clear OAuth state
     delete req.session.oauthState;
+    delete req.session.authTimestamp;
 
     await new Promise<void>((resolve, reject) => {
       req.session.save((err) => {
