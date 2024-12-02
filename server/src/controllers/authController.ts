@@ -66,6 +66,18 @@ export const getAuthorizationUrl = async (
       sessionID: req.sessionID
     });
 
+    // Regenerate session to ensure clean state
+    await new Promise<void>((resolve, reject) => {
+      req.session.regenerate((err) => {
+        if (err) {
+          console.error('Session regeneration error:', err);
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
+
     // Store state and metadata in session
     req.session.oauthState = state;
     req.session.frontendCallback = frontendCallback;
@@ -133,21 +145,14 @@ export const handleCallback = async (
       return;
     }
 
-    // If we already have a token, don't try to get another one
+    // If we already have a token, redirect to frontend with success
     if (req.session.accessToken) {
-      console.log('Token already exists, skipping token exchange');
-      if (req.method === 'POST') {
-        res.json({
-          isAuthenticated: true,
-          isPersistent: req.session.isPersistent,
-          sessionId: req.sessionID
-        });
-      } else {
-        const redirectUrl = new URL(req.session.frontendCallback || `${URLS.FRONTEND}/auth/callback`);
-        redirectUrl.searchParams.set("code", code as string);
-        redirectUrl.searchParams.set("state", state as string);
-        res.redirect(redirectUrl.toString());
-      }
+      console.log('Token already exists, redirecting to frontend');
+      const redirectUrl = new URL(req.session.frontendCallback || `${URLS.FRONTEND}/auth/callback`);
+      redirectUrl.searchParams.set('isAuthenticated', 'true');
+      redirectUrl.searchParams.set('isPersistent', String(!!req.session.isPersistent));
+      redirectUrl.searchParams.set('sessionId', req.sessionID);
+      res.redirect(redirectUrl.toString());
       return;
     }
 
@@ -181,10 +186,9 @@ export const handleCallback = async (
         req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days
       }
 
-      // Clear OAuth state after successful token exchange
+      // Clear OAuth state
       delete req.session.oauthState;
 
-      // Save session
       await new Promise<void>((resolve, reject) => {
         req.session.save((err) => {
           if (err) reject(err);
@@ -192,27 +196,17 @@ export const handleCallback = async (
         });
       });
 
-      // Send response based on request method
-      if (req.method === 'POST') {
-        res.json({
-          isAuthenticated: true,
-          isPersistent: req.session.isPersistent,
-          sessionId: req.sessionID
-        });
-      } else {
-        const redirectUrl = new URL(req.session.frontendCallback || `${URLS.FRONTEND}/auth/callback`);
-        redirectUrl.searchParams.set("code", code as string);
-        redirectUrl.searchParams.set("state", state as string);
-        res.redirect(redirectUrl.toString());
-      }
+      // Redirect to frontend with success parameters
+      const redirectUrl = new URL(req.session.frontendCallback || `${URLS.FRONTEND}/auth/callback`);
+      redirectUrl.searchParams.set('isAuthenticated', 'true');
+      redirectUrl.searchParams.set('isPersistent', String(!!req.session.isPersistent));
+      redirectUrl.searchParams.set('sessionId', req.sessionID);
+      res.redirect(redirectUrl.toString());
+
     } catch (tokenError) {
       console.error('Token exchange failed:', tokenError);
       const errorMessage = tokenError instanceof Error ? tokenError.message : 'Token exchange failed';
-      if (req.method === 'POST') {
-        res.status(400).json({ error: 'token_exchange_failed', message: errorMessage });
-      } else {
-        res.redirect(`${URLS.FRONTEND}/auth/callback?error=token_exchange_failed&message=${encodeURIComponent(errorMessage)}`);
-      }
+      res.redirect(`${URLS.FRONTEND}/auth/callback?error=token_exchange_failed&message=${encodeURIComponent(errorMessage)}`);
     }
   } catch (error) {
     console.error('Callback Error:', error);
@@ -220,12 +214,7 @@ export const handleCallback = async (
       error: "server_error",
       message: error instanceof Error ? error.message : "Unknown error"
     };
-
-    if (req.method === 'POST') {
-      res.status(500).json(errorResponse);
-    } else {
-      res.redirect(`${URLS.FRONTEND}/auth/callback?error=${encodeURIComponent(JSON.stringify(errorResponse))}`);
-    }
+    res.redirect(`${URLS.FRONTEND}/auth/callback?error=${encodeURIComponent(JSON.stringify(errorResponse))}`);
   }
 };
 
@@ -605,6 +594,10 @@ export const handleOAuthCallback = async (
     });
 
     if (!req.session) {
+      console.error('No session found:', {
+        sessionID: req.sessionID,
+        cookies: req.cookies
+      });
       throw new Error('No session found');
     }
 
@@ -612,7 +605,8 @@ export const handleOAuthCallback = async (
       console.error('Missing state parameters:', {
         receivedState: state,
         sessionState: req.session.oauthState,
-        sessionID: req.sessionID
+        sessionID: req.sessionID,
+        sessionData: req.session
       });
       throw new Error('Missing state parameters');
     }
@@ -621,7 +615,8 @@ export const handleOAuthCallback = async (
       console.error('State mismatch:', {
         receivedState: state,
         sessionState: req.session.oauthState,
-        sessionID: req.sessionID
+        sessionID: req.sessionID,
+        storageType: req.session.storageType
       });
       throw new Error('State validation failed');
     }
@@ -635,7 +630,7 @@ export const handleOAuthCallback = async (
     req.session.isPersistent = req.session.consent === true;
 
     if (req.session.isPersistent) {
-      req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000;
+      req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days
     }
 
     // Clear OAuth state
@@ -652,7 +647,8 @@ export const handleOAuthCallback = async (
     res.json({
       isAuthenticated: true,
       isPersistent: req.session.isPersistent,
-      sessionId: req.sessionID
+      sessionId: req.sessionID,
+      storageType: req.session.storageType
     });
   } catch (error) {
     console.error('OAuth callback error:', error);
