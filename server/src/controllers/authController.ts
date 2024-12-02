@@ -66,23 +66,10 @@ export const getAuthorizationUrl = async (
       sessionID: req.sessionID
     });
 
-    // Regenerate session to ensure clean state
-    await new Promise<void>((resolve, reject) => {
-      req.session.regenerate((err) => {
-        if (err) {
-          console.error('Session regeneration error:', err);
-          reject(err);
-        } else {
-          resolve();
-        }
-      });
-    });
-
-    // Store state and metadata in session
+    // Store state in session
     req.session.oauthState = state;
     req.session.frontendCallback = frontendCallback;
     req.session.consent = consent;
-    req.session.authTimestamp = timestamp;
     req.session.storageType = storageType;
 
     // Force session save
@@ -111,8 +98,7 @@ export const getAuthorizationUrl = async (
 
     res.json({ 
       url: authUrl.toString(),
-      sessionId: req.sessionID,
-      state
+      sessionId: req.sessionID
     });
   } catch (error) {
     console.error('Error in getAuthorizationUrl:', error);
@@ -125,8 +111,8 @@ export const handleCallback = async (
   res: Response
 ): Promise<void> => {
   try {
-    const code = req.query.code || req.body.code;
-    const state = req.query.state || req.body.state;
+    const code = req.query.code;
+    const state = req.query.state;
     
     console.log('Callback received:', {
       hasCode: !!code,
@@ -145,17 +131,6 @@ export const handleCallback = async (
       return;
     }
 
-    // If we already have a token, redirect to frontend with success
-    if (req.session.accessToken) {
-      console.log('Token already exists, redirecting to frontend');
-      const redirectUrl = new URL(req.session.frontendCallback || `${URLS.FRONTEND}/auth/callback`);
-      redirectUrl.searchParams.set('isAuthenticated', 'true');
-      redirectUrl.searchParams.set('isPersistent', String(!!req.session.isPersistent));
-      redirectUrl.searchParams.set('sessionId', req.sessionID);
-      res.redirect(redirectUrl.toString());
-      return;
-    }
-
     if (!state || !req.session.oauthState) {
       console.error('Missing state parameters:', {
         state,
@@ -168,46 +143,40 @@ export const handleCallback = async (
     if (state !== req.session.oauthState) {
       console.error('State mismatch:', {
         receivedState: state,
-        sessionState: req.session.oauthState
+        sessionState: req.session.oauthState,
+        sessionID: req.sessionID
       });
       res.redirect(`${URLS.FRONTEND}/auth/callback?error=invalid_state`);
       return;
     }
 
-    try {
-      const { token, refreshToken } = await BattleNetAPI.getAccessToken(code as string);
+    const { token, refreshToken } = await BattleNetAPI.getAccessToken(code as string);
 
-      // Update session
-      req.session.accessToken = token;
-      req.session.refreshToken = refreshToken;
-      req.session.isPersistent = !!req.session.consent;
+    // Update session
+    req.session.accessToken = token;
+    req.session.refreshToken = refreshToken;
+    req.session.isPersistent = !!req.session.consent;
 
-      if (req.session.isPersistent) {
-        req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days
-      }
-
-      // Clear OAuth state
-      delete req.session.oauthState;
-
-      await new Promise<void>((resolve, reject) => {
-        req.session.save((err) => {
-          if (err) reject(err);
-          else resolve();
-        });
-      });
-
-      // Redirect to frontend with success parameters
-      const redirectUrl = new URL(req.session.frontendCallback || `${URLS.FRONTEND}/auth/callback`);
-      redirectUrl.searchParams.set('isAuthenticated', 'true');
-      redirectUrl.searchParams.set('isPersistent', String(!!req.session.isPersistent));
-      redirectUrl.searchParams.set('sessionId', req.sessionID);
-      res.redirect(redirectUrl.toString());
-
-    } catch (tokenError) {
-      console.error('Token exchange failed:', tokenError);
-      const errorMessage = tokenError instanceof Error ? tokenError.message : 'Token exchange failed';
-      res.redirect(`${URLS.FRONTEND}/auth/callback?error=token_exchange_failed&message=${encodeURIComponent(errorMessage)}`);
+    if (req.session.isPersistent) {
+      req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000;
     }
+
+    // Clear OAuth state
+    delete req.session.oauthState;
+
+    await new Promise<void>((resolve, reject) => {
+      req.session.save((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+
+    const redirectUrl = new URL(req.session.frontendCallback || `${URLS.FRONTEND}/auth/callback`);
+    redirectUrl.searchParams.set('isAuthenticated', 'true');
+    redirectUrl.searchParams.set('isPersistent', String(!!req.session.isPersistent));
+    redirectUrl.searchParams.set('sessionId', req.sessionID);
+    res.redirect(redirectUrl.toString());
+
   } catch (error) {
     console.error('Callback Error:', error);
     const errorResponse = {
@@ -578,9 +547,7 @@ export const handleOAuthCallback = async (
   res: Response
 ): Promise<void> => {
   try {
-    const code = req.query.code || req.body.code;
-    const state = req.query.state || req.body.state;
-    const storageType = req.headers['x-storage-type'] as string;
+    const { code, state, storageType } = req.body;
     
     console.log('OAuth Callback Details:', {
       hasCode: !!code,
@@ -593,11 +560,29 @@ export const handleOAuthCallback = async (
       cookies: req.cookies
     });
 
+    // Try to get session from store if not in request
+    if (!req.session?.oauthState) {
+      const store = getStore();
+      const sessionId = req.cookies['wcv.sid'];
+      
+      if (sessionId) {
+        const storedSession = await new Promise<StoredSession | null>((resolve, reject) => {
+          store.get(sessionId, (err, session) => {
+            if (err) reject(err);
+            else resolve(session as StoredSession | null);
+          });
+        });
+
+        if (storedSession?.oauthState) {
+          req.session.oauthState = storedSession.oauthState;
+          req.session.frontendCallback = storedSession.frontendCallback;
+          req.session.consent = storedSession.consent;
+          req.session.storageType = storedSession.storageType;
+        }
+      }
+    }
+
     if (!req.session) {
-      console.error('No session found:', {
-        sessionID: req.sessionID,
-        cookies: req.cookies
-      });
       throw new Error('No session found');
     }
 
@@ -622,7 +607,7 @@ export const handleOAuthCallback = async (
     }
 
     // Exchange code for tokens
-    const { token, refreshToken } = await BattleNetAPI.getAccessToken(code as string);
+    const { token, refreshToken } = await BattleNetAPI.getAccessToken(code);
 
     // Update session
     req.session.accessToken = token;
