@@ -7,9 +7,24 @@ interface SessionData {
   [key: string]: any;
 }
 
-let store: Store | null = null;
+export interface StoredSession extends SessionData {
+  oauthState?: string;
+  frontendCallback?: string;
+  accessToken?: string;
+  refreshToken?: string;
+  isPersistent?: boolean;
+  consent?: boolean;
+  storageType?: string;
+}
 
-export const initializeStore = (mongoUri: string): Store => {
+// Define a custom store interface that includes the 'all' method
+export interface CustomStore extends Store {
+  all: (callback: (err: any, sessions: any[]) => void) => void;
+}
+
+let store: CustomStore | null = null;
+
+export const initializeStore = (mongoUri: string): CustomStore => {
   if (!store) {
     const mongoOptions: MongoClientOptions = {
       retryWrites: true,
@@ -19,7 +34,7 @@ export const initializeStore = (mongoUri: string): Store => {
     store = MongoStore.create({
       mongoUrl: mongoUri,
       ttl: 30 * 24 * 60 * 60, // 30 days
-      touchAfter: 24 * 3600, // 24 hours
+      touchAfter: 24 * 60 * 60, // 24 hours
       collectionName: 'sessions',
       autoRemove: 'native',
       stringify: false,
@@ -38,6 +53,10 @@ export const initializeStore = (mongoUri: string): Store => {
           return { cookie: {} };
         }
       }
+    }) as CustomStore;
+
+    store.on('error', (error) => {
+      console.error('Session store error:', error);
     });
 
     console.log('Session store initialized with configuration:', {
@@ -50,7 +69,7 @@ export const initializeStore = (mongoUri: string): Store => {
   return store;
 };
 
-export const getStore = (): Store => {
+export const getStore = (): CustomStore => {
   if (!store) {
     throw new Error("Store not initialized");
   }
