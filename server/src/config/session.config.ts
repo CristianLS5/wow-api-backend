@@ -33,10 +33,10 @@ export const initializeSession = (app: Application): void => {
     proxy: true,
     rolling: true,
     cookie: {
-      secure: true,
+      secure: process.env.NODE_ENV === 'production',
       httpOnly: true,
-      sameSite: 'none',
-      domain: '.wowcharacterviewer.com',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      domain: process.env.NODE_ENV === 'production' ? '.wowcharacterviewer.com' : undefined,
       path: '/',
       maxAge: 24 * 60 * 60 * 1000
     }
