@@ -36,7 +36,7 @@ export const initializeSession = (app: Application): void => {
       secure: process.env.NODE_ENV === 'production',
       httpOnly: true,
       sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-      domain: undefined,
+      domain: process.env.NODE_ENV === 'production' ? '.wowcharacterviewer.com' : undefined,
       path: '/',
       maxAge: 24 * 60 * 60 * 1000
     }

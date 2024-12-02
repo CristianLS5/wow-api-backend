@@ -113,17 +113,42 @@ export const handleCallback = async (
   try {
     const code = req.query.code;
     const state = req.query.state;
+    const initialState = req.query.initial_state;
     
     console.log('Callback received:', {
       hasCode: !!code,
       hasState: !!state,
       receivedState: state,
+      initialState,
       sessionID: req.sessionID,
       sessionState: req.session?.oauthState,
       hasSession: !!req.session,
       method: req.method,
-      isCodeUsed: !!req.session?.accessToken
+      isCodeUsed: !!req.session?.accessToken,
+      cookies: req.cookies
     });
+
+    // Try to recover session from store
+    const store = getStore();
+    const sessions = await new Promise<StoredSession[]>((resolve, reject) => {
+      store.all((err, sessions) => {
+        if (err) reject(err);
+        else resolve(sessions as StoredSession[]);
+      });
+    });
+
+    // Find session with matching state
+    const matchingSession = sessions.find(session => 
+      session.oauthState === state || session.oauthState === initialState
+    );
+
+    if (matchingSession) {
+      // Restore session data
+      req.session.oauthState = matchingSession.oauthState;
+      req.session.frontendCallback = matchingSession.frontendCallback;
+      req.session.consent = matchingSession.consent;
+      req.session.storageType = matchingSession.storageType;
+    }
 
     if (!req.session) {
       console.error('No session found in callback');
@@ -131,19 +156,21 @@ export const handleCallback = async (
       return;
     }
 
-    if (!state || !req.session.oauthState) {
+    if (!state || (!req.session.oauthState && !initialState)) {
       console.error('Missing state parameters:', {
         state,
-        sessionState: req.session.oauthState
+        sessionState: req.session.oauthState,
+        initialState
       });
       res.redirect(`${URLS.FRONTEND}/auth/callback?error=missing_state`);
       return;
     }
 
-    if (state !== req.session.oauthState) {
+    if (state !== req.session.oauthState && state !== initialState) {
       console.error('State mismatch:', {
         receivedState: state,
         sessionState: req.session.oauthState,
+        initialState,
         sessionID: req.sessionID
       });
       res.redirect(`${URLS.FRONTEND}/auth/callback?error=invalid_state`);
@@ -175,6 +202,7 @@ export const handleCallback = async (
     redirectUrl.searchParams.set('isAuthenticated', 'true');
     redirectUrl.searchParams.set('isPersistent', String(!!req.session.isPersistent));
     redirectUrl.searchParams.set('sessionId', req.sessionID);
+    redirectUrl.searchParams.set('storageType', req.session.storageType || 'session');
     res.redirect(redirectUrl.toString());
 
   } catch (error) {
