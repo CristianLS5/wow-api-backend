@@ -1,7 +1,8 @@
-import session, { SessionOptions, Session } from 'express-session';
-import { Application, Request, Response, NextFunction } from 'express';
-import { initializeStore } from './sessionStore';
-import { SECRETS } from './config';
+import session, { SessionOptions, Session } from "express-session";
+import { Application, Request, Response, NextFunction } from "express";
+import { initializeStore } from "./sessionStore";
+import { SECRETS } from "./config";
+import cookieParser from "cookie-parser";
 
 // Extend Session type to include all custom properties
 interface CustomSession extends Session {
@@ -28,33 +29,38 @@ export const initializeSession = (app: Application): void => {
     secret: SECRETS.SESSION.SECRET,
     resave: false,
     saveUninitialized: true,
-    name: 'wcv.sid',
+    name: "wcv.sid",
     store,
     proxy: true,
     rolling: true,
     cookie: {
-      secure: process.env.NODE_ENV === 'production',
+      secure: process.env.NODE_ENV === "production",
       httpOnly: true,
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-      domain: process.env.NODE_ENV === 'production' ? '.wowcharacterviewer.com' : undefined,
-      path: '/',
-      maxAge: 24 * 60 * 60 * 1000
-    }
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      domain:
+        process.env.NODE_ENV === "production"
+          ? ".wowcharacterviewer.com"
+          : undefined,
+      path: "/",
+      maxAge: 24 * 60 * 60 * 1000,
+    },
+    unset: "destroy",
   };
 
   // Enable trust proxy before session middleware
-  app.set('trust proxy', 1);
-  
+  app.set("trust proxy", 1);
+
+  app.use(cookieParser(SECRETS.SESSION.SECRET));
   app.use(session(sessionConfig));
 
   // Add session debug middleware in development
-  if (process.env.NODE_ENV !== 'production') {
+  if (process.env.NODE_ENV !== "production") {
     app.use((req: CustomRequest, _res: Response, next: NextFunction) => {
-      console.log('Session Debug:', {
+      console.log("Session Debug:", {
         id: req.sessionID,
         cookie: req.session?.cookie,
         isNew: req.session?.isNew,
-        oauthState: req.session?.oauthState
+        oauthState: req.session?.oauthState,
       });
       next();
     });

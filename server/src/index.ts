@@ -19,7 +19,8 @@ import reputationsRoutes from "./routes/reputationsRoutes";
 import dungeonsRoutes from "./routes/dungeonsRoutes";
 import affixesRoutes from "./routes/affixesRoutes";
 import raidsRoutes from "./routes/raidsRoutes";
-import { URLS } from './config/config';
+import { SECRETS, URLS } from './config/config';
+import cookieParser from 'cookie-parser';
 
 // Load environment variables first
 dotenv.config();
@@ -73,6 +74,9 @@ app.use(cors(corsOptions));
 // Then body parser
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Add cookie parser before session middleware
+app.use(cookieParser(SECRETS.SESSION.SECRET));
 
 // Then session
 initializeSession(app);

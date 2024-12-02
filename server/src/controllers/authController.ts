@@ -115,6 +115,15 @@ export const handleCallback = async (
     const state = req.query.state;
     const initialState = req.query.initial_state;
     
+    // Parse cookies manually if needed
+    const cookies = req.headers.cookie?.split(';')
+      .map(c => c.trim())
+      .reduce((acc, curr) => {
+        const [key, value] = curr.split('=');
+        acc[key] = value;
+        return acc;
+      }, {} as {[key: string]: string}) || {};
+    
     console.log('Callback received:', {
       hasCode: !!code,
       hasState: !!state,
@@ -125,9 +134,38 @@ export const handleCallback = async (
       hasSession: !!req.session,
       method: req.method,
       isCodeUsed: !!req.session?.accessToken,
-      cookies: req.cookies,
+      cookies,
       headers: req.headers
     });
+
+    // Try to get the correct session ID
+    const sessionCookie = cookies['wcv.sid'];
+    if (sessionCookie && !req.session?.oauthState) {
+      const sessionId = sessionCookie.split('.')[0].replace('s:', '');
+      const store = getStore();
+      
+      const storedSession = await new Promise<StoredSession | null>((resolve, reject) => {
+        store.get(sessionId, (err, session) => {
+          if (err) reject(err);
+          else resolve(session as StoredSession | null);
+        });
+      });
+
+      if (storedSession?.oauthState) {
+        // Restore session data
+        req.session.oauthState = storedSession.oauthState;
+        req.session.frontendCallback = storedSession.frontendCallback;
+        req.session.consent = storedSession.consent;
+        req.session.storageType = storedSession.storageType;
+        
+        await new Promise<void>((resolve, reject) => {
+          req.session.save((err) => {
+            if (err) reject(err);
+            else resolve();
+          });
+        });
+      }
+    }
 
     if (!req.session) {
       console.error('No session found in callback');
