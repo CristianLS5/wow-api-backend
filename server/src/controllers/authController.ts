@@ -38,6 +38,8 @@ interface StoredSession extends SessionData {
   isPersistent?: boolean;
   consent?: boolean;
   storageType?: string;
+  id?: string;
+  _id?: string;
 }
 
 export const getAuthorizationUrl = async (
@@ -115,15 +117,6 @@ export const handleCallback = async (
     const state = req.query.state;
     const initialState = req.query.initial_state;
     
-    // Parse cookies manually if needed
-    const cookies = req.headers.cookie?.split(';')
-      .map(c => c.trim())
-      .reduce((acc, curr) => {
-        const [key, value] = curr.split('=');
-        acc[key] = value;
-        return acc;
-      }, {} as {[key: string]: string}) || {};
-    
     console.log('Callback received:', {
       hasCode: !!code,
       hasState: !!state,
@@ -134,37 +127,68 @@ export const handleCallback = async (
       hasSession: !!req.session,
       method: req.method,
       isCodeUsed: !!req.session?.accessToken,
-      cookies,
-      headers: req.headers
+      cookies: req.cookies
     });
 
-    // Try to get the correct session ID
-    const sessionCookie = cookies['wcv.sid'];
-    if (sessionCookie && !req.session?.oauthState) {
-      const sessionId = sessionCookie.split('.')[0].replace('s:', '');
-      const store = getStore();
+    // Extract session ID from cookie
+    const sessionCookie = req.cookies['wcv.sid'];
+    let originalSessionId = '';
+    
+    if (sessionCookie) {
+      // Parse the session ID from the signed cookie
+      originalSessionId = sessionCookie.split('.')[0].replace('s:', '');
       
-      const storedSession = await new Promise<StoredSession | null>((resolve, reject) => {
-        store.get(sessionId, (err, session) => {
-          if (err) reject(err);
-          else resolve(session as StoredSession | null);
+      console.log('Found original session:', {
+        cookieValue: sessionCookie,
+        originalSessionId
+      });
+    }
+
+    // Try to get the original session from store
+    const store = getStore();
+    const originalSession = await new Promise<StoredSession | null>((resolve, reject) => {
+      if (!originalSessionId) {
+        resolve(null);
+        return;
+      }
+      store.get(originalSessionId, (err, session) => {
+        if (err) {
+          console.error('Error getting session:', err);
+          reject(err);
+        } else {
+          const typedSession = session as StoredSession;
+          console.log('Retrieved session:', {
+            id: originalSessionId,
+            hasSession: !!typedSession,
+            oauthState: typedSession?.oauthState
+          });
+          resolve(typedSession);
+        }
+      });
+    });
+
+    // If we found the original session, restore its data
+    if (originalSession?.oauthState) {
+      req.session.oauthState = originalSession.oauthState;
+      req.session.frontendCallback = originalSession.frontendCallback;
+      req.session.consent = originalSession.consent;
+      req.session.storageType = originalSession.storageType;
+      
+      // Force save the restored session
+      await new Promise<void>((resolve, reject) => {
+        req.session.save((err) => {
+          if (err) {
+            console.error('Session save error:', err);
+            reject(err);
+          } else {
+            console.log('Session restored and saved:', {
+              id: req.sessionID,
+              oauthState: req.session.oauthState
+            });
+            resolve();
+          }
         });
       });
-
-      if (storedSession?.oauthState) {
-        // Restore session data
-        req.session.oauthState = storedSession.oauthState;
-        req.session.frontendCallback = storedSession.frontendCallback;
-        req.session.consent = storedSession.consent;
-        req.session.storageType = storedSession.storageType;
-        
-        await new Promise<void>((resolve, reject) => {
-          req.session.save((err) => {
-            if (err) reject(err);
-            else resolve();
-          });
-        });
-      }
     }
 
     if (!req.session) {
@@ -173,43 +197,33 @@ export const handleCallback = async (
       return;
     }
 
-    // Try to recover session from store if state doesn't match
-    if ((!req.session.oauthState || req.session.oauthState !== state) && initialState) {
-      const store = getStore();
-      const sessions = await new Promise<StoredSession[]>((resolve, reject) => {
-        store.all((err, sessions) => {
-          if (err) reject(err);
-          else resolve(sessions as StoredSession[]);
-        });
-      });
-
-      const matchingSession = sessions.find(session => 
-        session.oauthState === state || session.oauthState === initialState
-      );
-
-      if (matchingSession) {
-        req.session.oauthState = matchingSession.oauthState;
-        req.session.frontendCallback = matchingSession.frontendCallback;
-        req.session.consent = matchingSession.consent;
-        req.session.storageType = matchingSession.storageType;
-        
-        await new Promise<void>((resolve, reject) => {
-          req.session.save((err) => {
-            if (err) reject(err);
-            else resolve();
-          });
-        });
-      }
-    }
-
     if (!state || (!req.session.oauthState && !initialState)) {
       console.error('Missing state parameters:', {
         state,
         sessionState: req.session.oauthState,
         initialState,
-        sessionID: req.sessionID
+        sessionID: req.sessionID,
+        originalSessionId
       });
       res.redirect(`${URLS.FRONTEND}/auth/callback?error=missing_state`);
+      return;
+    }
+
+    // Check state against both current session and original session
+    const validState = state === req.session.oauthState || 
+                      state === originalSession?.oauthState || 
+                      state === initialState;
+
+    if (!validState) {
+      console.error('State mismatch:', {
+        receivedState: state,
+        sessionState: req.session.oauthState,
+        originalSessionState: originalSession?.oauthState,
+        initialState,
+        sessionID: req.sessionID,
+        originalSessionId
+      });
+      res.redirect(`${URLS.FRONTEND}/auth/callback?error=invalid_state`);
       return;
     }
 
