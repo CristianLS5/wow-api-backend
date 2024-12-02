@@ -28,7 +28,10 @@ export const initializeStore = (mongoUri: string): CustomStore => {
   if (!store) {
     const mongoOptions: MongoClientOptions = {
       retryWrites: true,
-      w: 'majority'
+      w: 'majority',
+      ssl: true,
+      tls: true,
+      tlsAllowInvalidCertificates: true
     };
 
     store = MongoStore.create({
@@ -37,21 +40,17 @@ export const initializeStore = (mongoUri: string): CustomStore => {
       touchAfter: 24 * 60 * 60, // 24 hours
       collectionName: 'sessions',
       autoRemove: 'native',
+      crypto: {
+        secret: false
+      },
       stringify: false,
       mongoOptions,
+      dbName: "wow_character_viewer",
       serialize: (session: SessionData) => {
-        if (typeof session === 'string') {
-          return session;
-        }
-        return JSON.stringify(session);
-      },
-      unserialize: (session: string) => {
-        try {
-          return JSON.parse(session);
-        } catch (e) {
-          console.error('Session parse error:', e);
-          return { cookie: {} };
-        }
+        return {
+          ...session,
+          _id: session.id || session._id
+        };
       }
     }) as CustomStore;
 
@@ -59,11 +58,16 @@ export const initializeStore = (mongoUri: string): CustomStore => {
       console.error('Session store error:', error);
     });
 
-    console.log('Session store initialized with configuration:', {
-      ttl: '30 days',
-      touchAfter: '24 hours',
-      collection: 'sessions',
-      stringify: false
+    store.on('create', (sessionId) => {
+      console.log('Session created:', sessionId);
+    });
+
+    store.on('touch', (sessionId) => {
+      console.log('Session touched:', sessionId);
+    });
+
+    store.on('destroy', (sessionId) => {
+      console.log('Session destroyed:', sessionId);
     });
   }
   return store;
