@@ -47,6 +47,7 @@ const corsOptions = {
     URLS.FRONTEND,
     URLS.API,
     'https://www.wowcharacterviewer.com',
+    'https://oauth.battle.net',
     /\.battle\.net$/
   ],
   credentials: true,
@@ -56,9 +57,11 @@ const corsOptions = {
     'Authorization',
     'Cookie',
     'X-Session-ID',
-    'X-Storage-Type'
+    'X-Storage-Type',
+    'X-Initial-State'
   ],
-  exposedHeaders: ['Set-Cookie']
+  exposedHeaders: ['Set-Cookie'],
+  preflightContinue: true
 };
 
 const app = express();

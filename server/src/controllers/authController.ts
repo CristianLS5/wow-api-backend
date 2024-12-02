@@ -98,9 +98,16 @@ export const getAuthorizationUrl = async (
     authUrl.searchParams.set("scope", "wow.profile");
     authUrl.searchParams.set("state", state);
 
+    // Add session ID to the state
+    const stateWithSession = {
+      state,
+      sessionId: req.sessionID
+    };
+
     res.json({ 
       url: authUrl.toString(),
-      sessionId: req.sessionID
+      sessionId: req.sessionID,
+      state: stateWithSession
     });
   } catch (error) {
     console.error('Error in getAuthorizationUrl:', error);
