@@ -18,6 +18,7 @@
     "axios": "^1.7.7",
     "bottleneck": "^2.19.5",
     "connect-mongo": "^5.0.0",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "csv-parse": "^5.5.6",
     "dotenv": "^16.4.5",
@@ -27,6 +28,7 @@
     "winston": "^3.16.0"
   },
   "devDependencies": {
+    "@types/cookie-parser": "^1.4.6",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
     "@types/express-session": "^1.18.0",
