@@ -125,30 +125,9 @@ export const handleCallback = async (
       hasSession: !!req.session,
       method: req.method,
       isCodeUsed: !!req.session?.accessToken,
-      cookies: req.cookies
+      cookies: req.cookies,
+      headers: req.headers
     });
-
-    // Try to recover session from store
-    const store = getStore();
-    const sessions = await new Promise<StoredSession[]>((resolve, reject) => {
-      store.all((err, sessions) => {
-        if (err) reject(err);
-        else resolve(sessions as StoredSession[]);
-      });
-    });
-
-    // Find session with matching state
-    const matchingSession = sessions.find(session => 
-      session.oauthState === state || session.oauthState === initialState
-    );
-
-    if (matchingSession) {
-      // Restore session data
-      req.session.oauthState = matchingSession.oauthState;
-      req.session.frontendCallback = matchingSession.frontendCallback;
-      req.session.consent = matchingSession.consent;
-      req.session.storageType = matchingSession.storageType;
-    }
 
     if (!req.session) {
       console.error('No session found in callback');
@@ -156,24 +135,43 @@ export const handleCallback = async (
       return;
     }
 
+    // Try to recover session from store if state doesn't match
+    if ((!req.session.oauthState || req.session.oauthState !== state) && initialState) {
+      const store = getStore();
+      const sessions = await new Promise<StoredSession[]>((resolve, reject) => {
+        store.all((err, sessions) => {
+          if (err) reject(err);
+          else resolve(sessions as StoredSession[]);
+        });
+      });
+
+      const matchingSession = sessions.find(session => 
+        session.oauthState === state || session.oauthState === initialState
+      );
+
+      if (matchingSession) {
+        req.session.oauthState = matchingSession.oauthState;
+        req.session.frontendCallback = matchingSession.frontendCallback;
+        req.session.consent = matchingSession.consent;
+        req.session.storageType = matchingSession.storageType;
+        
+        await new Promise<void>((resolve, reject) => {
+          req.session.save((err) => {
+            if (err) reject(err);
+            else resolve();
+          });
+        });
+      }
+    }
+
     if (!state || (!req.session.oauthState && !initialState)) {
       console.error('Missing state parameters:', {
         state,
         sessionState: req.session.oauthState,
-        initialState
-      });
-      res.redirect(`${URLS.FRONTEND}/auth/callback?error=missing_state`);
-      return;
-    }
-
-    if (state !== req.session.oauthState && state !== initialState) {
-      console.error('State mismatch:', {
-        receivedState: state,
-        sessionState: req.session.oauthState,
         initialState,
         sessionID: req.sessionID
       });
-      res.redirect(`${URLS.FRONTEND}/auth/callback?error=invalid_state`);
+      res.redirect(`${URLS.FRONTEND}/auth/callback?error=missing_state`);
       return;
     }
 
