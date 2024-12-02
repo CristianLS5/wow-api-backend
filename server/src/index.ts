@@ -65,7 +65,7 @@ const port = process.env.PORT || 3000;
 const mongoUri = process.env.MONGODB_URI!;
 
 // Enable trust proxy first
-app.set('trust proxy', 1);
+app.enable('trust proxy');
 
 // Then CORS
 app.use(cors(corsOptions));
